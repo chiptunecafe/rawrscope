@@ -12,7 +12,7 @@ oscilloscope visualizations of audio, typically chiptune.
 deprecated in favor of Apple's Metal API. Although Pathfinder, the 2D rendering
 engine rawrscope uses, has a Metal backend, I would rather not have to
 explicitly support it. Instead, I am waiting on Pathfinder to implement a
-`[gfx-hal](https://github.com/gfx-rs/gfx)` backend that will allow rawrscope to
+[`gfx-hal`](https://github.com/gfx-rs/gfx) backend that will allow rawrscope to
 target all of the major graphics APIs.
 
 More on Pathfinder `gfx-hal` support:
