@@ -14,12 +14,13 @@ fn main() {
                     for source in state.audio_sources {
                         println!("{}", source.path.display());
 
-                        let channels = source.channels().unwrap();
-                        let sample_rate = source.sample_rate().unwrap();
-                        let len = source.num_samples().unwrap();
+                        let as_loaded = source.as_loaded().unwrap();
+
+                        let channels = as_loaded.spec().channels;
+                        let sample_rate = as_loaded.spec().sample_rate;
+                        let len = as_loaded.len();
 
                         let time_secs = (len / u32::from(channels)) as f32 / sample_rate as f32;
-
                         println!("length: {:.2}s", time_secs);
                     }
                 }

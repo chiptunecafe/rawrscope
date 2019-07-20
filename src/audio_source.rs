@@ -40,15 +40,35 @@ impl AudioSource {
         Ok(())
     }
 
-    pub fn channels(&self) -> Option<u16> {
-        self.wav_reader.as_ref().map(|r| r.spec().channels)
+    pub fn is_loaded(&self) -> bool {
+        self.wav_reader.is_some()
     }
 
-    pub fn sample_rate(&self) -> Option<u32> {
-        self.wav_reader.as_ref().map(|r| r.spec().sample_rate)
+    pub fn as_loaded(&self) -> Option<AsLoaded> {
+        self.wav_reader.as_ref().map(|wav| AsLoaded {
+            fade_in: self.fade_in,
+            fade_out: self.fade_out,
+            gain: self.gain,
+
+            wav_reader: wav,
+        })
+    }
+}
+
+pub struct AsLoaded<'a> {
+    fade_in: Option<f32>,
+    fade_out: Option<f32>,
+    gain: f32,
+
+    wav_reader: &'a hound::WavReader<fs::File>,
+}
+
+impl<'a> AsLoaded<'a> {
+    pub fn spec(&self) -> hound::WavSpec {
+        self.wav_reader.spec()
     }
 
-    pub fn num_samples(&self) -> Option<u32> {
-        self.wav_reader.as_ref().map(|r| r.len())
+    pub fn len(&self) -> u32 {
+        self.wav_reader.len()
     }
 }
