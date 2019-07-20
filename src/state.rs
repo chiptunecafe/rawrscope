@@ -26,7 +26,7 @@ pub enum WriteError {
     SerializeError { source: ron::ser::Error },
 }
 
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Default, Deserialize, Serialize)]
 pub struct State {
     pub audio_sources: Vec<crate::audio_source::AudioSource>,
 }
@@ -51,5 +51,13 @@ impl State {
             ron::ser::to_string_pretty(self, Default::default()).context(SerializeError)?;
 
         file.write_all(serialized.as_ref()).context(IoError)
+    }
+
+    pub fn load_audio_sources(&mut self) -> Result<(), crate::audio_source::LoadError> {
+        for source in self.audio_sources.iter_mut() {
+            source.load()?;
+        }
+
+        Ok(())
     }
 }
