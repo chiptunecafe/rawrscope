@@ -26,19 +26,9 @@ pub enum WriteError {
     SerializeError { source: ron::ser::Error },
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct AudioSource {
-    pub path: PathBuf,
-
-    pub fade_in: Option<f32>,
-    pub fade_out: Option<f32>,
-
-    pub gain: f32,
-}
-
 #[derive(Debug, Default, Deserialize, Serialize)]
 pub struct State {
-    pub audio_sources: Vec<AudioSource>,
+    pub audio_sources: Vec<crate::audio_source::AudioSource>,
 }
 
 impl State {

@@ -1,5 +1,6 @@
 use std::io;
 
+mod audio_source;
 mod state;
 
 fn main() {
