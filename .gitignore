@@ -1,4 +1,8 @@
+.DS_Store
+
 /target
 **/*.rs.bk
 
+# test files
 *.rprj
+*.wav
