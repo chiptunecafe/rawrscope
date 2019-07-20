@@ -5,6 +5,6 @@ authors = ["rytone <rytonemail@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+ron = "0.5.1"
 serde = { version = "1.0.97", features = ["derive"] }
-serde_yaml = "0.8.9"
 snafu = "0.4.1"

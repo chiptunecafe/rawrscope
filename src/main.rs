@@ -3,14 +3,14 @@ use std::io;
 mod state;
 
 fn main() {
-    match state::State::from_file("rawrscope_proj.yml") {
+    match state::State::from_file("test.rprj") {
         Ok(state) => println!("{:?}", state),
-        Err(state::Error::OpenError { ref source, .. })
+        Err(state::ReadError::OpenError { ref source, .. })
             if source.kind() == io::ErrorKind::NotFound =>
         {
             println!("project not found, writing default...");
             let state = state::State::default();
-            if let Err(e) = state.write("rawrscope_proj.yml") {
+            if let Err(e) = state.write("test.rprj") {
                 println!("{}", e);
             }
         }
