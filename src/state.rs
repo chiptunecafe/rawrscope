@@ -44,11 +44,13 @@ impl State {
 
         let mut state: State = ron::de::from_reader(file).context(ParseError)?;
 
-        for source in state.audio_sources.iter_mut() {
-            if let Err(e) = source.load() {
-                warnings.push(Box::new(e));
-            }
-        }
+        warnings.extend(
+            state
+                .audio_sources
+                .iter_mut()
+                .filter_map(|s| s.load().err().map(Box::new))
+                .map(|b| b as Box<dyn std::error::Error>),
+        );
 
         Ok((state, warnings))
     }
