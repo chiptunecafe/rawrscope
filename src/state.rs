@@ -32,13 +32,25 @@ pub struct State {
 }
 
 impl State {
-    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, ReadError> {
+    pub fn from_file<P: AsRef<Path>>(
+        path: P,
+    ) -> Result<(Self, Vec<Box<dyn std::error::Error>>), ReadError> {
+        let mut warnings = Vec::<Box<dyn std::error::Error>>::new();
+
         let path = path.as_ref();
         let file = fs::File::open(path).context(OpenError {
             path: path.to_path_buf(),
         })?;
 
-        ron::de::from_reader(file).context(ParseError)
+        let mut state: State = ron::de::from_reader(file).context(ParseError)?;
+
+        for source in state.audio_sources.iter_mut() {
+            if let Err(e) = source.load() {
+                warnings.push(Box::new(e));
+            }
+        }
+
+        Ok((state, warnings))
     }
 
     pub fn write<P: AsRef<Path>>(&self, path: P) -> Result<(), WriteError> {
@@ -51,13 +63,5 @@ impl State {
             ron::ser::to_string_pretty(self, Default::default()).context(SerializeError)?;
 
         file.write_all(serialized.as_ref()).context(IoError)
-    }
-
-    pub fn load_audio_sources(&mut self) -> Result<(), crate::audio_source::LoadError> {
-        for source in self.audio_sources.iter_mut() {
-            source.load()?;
-        }
-
-        Ok(())
     }
 }

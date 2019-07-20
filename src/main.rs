@@ -5,26 +5,27 @@ mod state;
 
 fn main() {
     match state::State::from_file("test.rprj") {
-        Ok(mut state) => {
+        Ok((state, warnings)) => {
             println!("loaded state");
-            match state.load_audio_sources() {
-                Ok(_) => {
-                    println!("loaded audio sources");
 
-                    for source in state.audio_sources {
-                        println!("{}", source.path.display());
-
-                        let as_loaded = source.as_loaded().unwrap();
-
-                        let channels = as_loaded.spec().channels;
-                        let sample_rate = as_loaded.spec().sample_rate;
-                        let len = as_loaded.len();
-
-                        let time_secs = (len / u32::from(channels)) as f32 / sample_rate as f32;
-                        println!("length: {:.2}s", time_secs);
-                    }
+            if warnings.is_empty() {
+                println!("no warnings");
+            } else {
+                println!("warnings:");
+                for w in &warnings {
+                    println!("{}", w);
                 }
-                Err(e) => println!("failed to load audio sources: {}", e),
+            }
+
+            for source in state.audio_sources.iter().filter_map(|s| s.as_loaded()) {
+                println!("{}", source.path().display());
+
+                let channels = source.spec().channels;
+                let sample_rate = source.spec().sample_rate;
+                let len = source.len();
+
+                let time_secs = (len / u32::from(channels)) as f32 / sample_rate as f32;
+                println!("length: {:.2}s", time_secs);
             }
         }
         Err(state::ReadError::OpenError { ref source, .. })
