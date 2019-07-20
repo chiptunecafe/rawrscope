@@ -21,25 +21,27 @@ More on Pathfinder `gfx-hal` support:
 
 ## Features
 
-* Intuitive interface
-* Realtime editor and preview
-* Fast and high quality 2D rendering using the
+\* = unimplemented
+
+* \*Intuitive interface
+* \*Realtime editor and preview
+* \*Fast and high quality 2D rendering using the
   [Pathfinder](https://github.com/servo/pathfinder) rasterizer
 * Many centering algorithms
-  * Peak Speed
-  * Fundamental Phase
-  * Crosscorrelation
-  * External Trigger
-* High-quality trigger generator for external trigger mode
-* Audio manipulation tools (trim, fade in/out, gain)
-* Node-based audio routing interface
-  * Automatic master audio generation
-  * Stereo upmixing/downmixing
-* Visual templates and presets for a quicker workflow
-* Built-in video export
-* Arbitrary post-processing shaders
-* Command line interface
-* Wriiten in [Rust](https://www.rust-lang.org) :)
+  * \*Peak Speed
+  * \*Fundamental Phase
+  * \*Crosscorrelation
+  * \*External Trigger
+* \*High-quality trigger generator for external trigger mode
+* \*Audio manipulation tools (trim, fade in/out, gain)
+* \*Node-based audio routing interface
+  * \*Automatic master audio generation
+  * \*Stereo upmixing/downmixing
+* \*Visual templates and presets for a quicker workflow
+* \*Built-in video export
+* \*Arbitrary post-processing shaders
+* \*Command line interface
+* Written in [Rust](https://www.rust-lang.org) :)
 
 ## Installation
 
