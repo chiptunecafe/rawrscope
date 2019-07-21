@@ -20,6 +20,7 @@ pub fn run(state_file: Option<&str>) {
                 if let Err(e) = state.write(path) {
                     log::error!("Failed to write new project: {}", e);
                 }
+                log::debug!("Created new project at {}", path);
                 state
             }
             Err(e) => {
