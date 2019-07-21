@@ -6,24 +6,24 @@ pub fn run(state_file: Option<&str>) {
     let mut state = match state_file {
         Some(path) => match State::from_file(path) {
             Ok((state, warnings)) => {
-                println!("loaded state from {}", path);
                 for w in warnings {
-                    println!("{}", w);
+                    log::warn!("{}", w);
                 }
+                log::info!("Loaded project from {}", path);
                 state
             }
             Err(state::ReadError::OpenError { ref source, .. })
                 if source.kind() == io::ErrorKind::NotFound =>
             {
-                println!("project not found, writing default...");
+                log::warn!("Project not found, writing default...");
                 let state = State::default();
                 if let Err(e) = state.write(path) {
-                    println!("{}", e);
+                    log::error!("Failed to write new project: {}", e);
                 }
                 state
             }
             Err(e) => {
-                println!("could not load project: {}", e);
+                log::error!("Failed to load project: {}", e);
                 State::default()
             }
         },
