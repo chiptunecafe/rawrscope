@@ -53,6 +53,10 @@ impl AudioSource {
         Ok(())
     }
 
+    pub fn unload(&mut self) {
+        self.wav_reader = None;
+    }
+
     pub fn is_loaded(&self) -> bool {
         self.wav_reader.is_some()
     }
