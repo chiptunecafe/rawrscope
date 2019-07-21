@@ -97,13 +97,13 @@ impl<'a> AsLoaded<'a> {
         self.wav_reader.len()
     }
 
-    pub fn chunk_at(&mut self, pos: u32, len: usize) -> Result<Vec<f64>, ReadError> {
+    pub fn chunk_at(&mut self, pos: u32, len: usize) -> Result<Vec<f32>, ReadError> {
         self.wav_reader.seek(pos).context(SeekError { pos })?;
         self.next_chunk(len)
     }
 
     // cursed
-    pub fn next_chunk(&mut self, len: usize) -> Result<Vec<f64>, ReadError> {
+    pub fn next_chunk(&mut self, len: usize) -> Result<Vec<f32>, ReadError> {
         match self.spec().sample_format {
             hound::SampleFormat::Int => match self.spec().bits_per_sample {
                 8 => {
@@ -136,10 +136,7 @@ impl<'a> AsLoaded<'a> {
             hound::SampleFormat::Float => match self.spec().bits_per_sample {
                 32 => {
                     let samples = self.wav_reader.samples();
-                    samples
-                        .take(len)
-                        .map(|v| v.context(DecodeError).map(f32::to_sample))
-                        .collect()
+                    samples.take(len).map(|v| v.context(DecodeError)).collect()
                 }
                 v => Err(ReadError::UnsupportedDepth { depth: v }),
             },
