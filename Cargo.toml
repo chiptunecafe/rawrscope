@@ -5,6 +5,7 @@ authors = ["rytone <rytonemail@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+clap = "2.33.0"
 hound = "3.4.0"
 ron = "0.5.1"
 sample = "0.10.0"
