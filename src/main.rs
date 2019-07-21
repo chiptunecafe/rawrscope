@@ -5,7 +5,7 @@ mod state;
 
 fn main() {
     match state::State::from_file("test.rprj") {
-        Ok((state, warnings)) => {
+        Ok((mut state, warnings)) => {
             println!("loaded state");
 
             if warnings.is_empty() {
@@ -17,7 +17,7 @@ fn main() {
                 }
             }
 
-            for source in state.audio_sources.iter().filter_map(|s| s.as_loaded()) {
+            for mut source in state.audio_sources.iter_mut().filter_map(|s| s.as_loaded()) {
                 println!("{}", source.path().display());
 
                 let channels = source.spec().channels;
@@ -26,6 +26,11 @@ fn main() {
 
                 let time_secs = (len / u32::from(channels)) as f32 / sample_rate as f32;
                 println!("length: {:.2}s", time_secs);
+
+                match source.next_chunk(5000) {
+                    Ok(chunk) => println!("5000th sample: {}", chunk[4999]),
+                    Err(e) => println!("could not read first 5000 samples: {}", e),
+                }
             }
         }
         Err(state::ReadError::OpenError { ref source, .. })
