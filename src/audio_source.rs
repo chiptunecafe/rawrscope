@@ -35,7 +35,7 @@ pub struct AudioSource {
     pub gain: f32,
 
     #[serde(skip)]
-    pub wav_reader: Option<hound::WavReader<fs::File>>,
+    pub wav_reader: Option<hound::WavReader<io::BufReader<fs::File>>>,
 }
 
 impl AudioSource {
@@ -44,7 +44,7 @@ impl AudioSource {
             path: self.path.clone(),
         })?;
 
-        let wav_reader = hound::WavReader::new(file).context(WavError {
+        let wav_reader = hound::WavReader::new(io::BufReader::new(file)).context(WavError {
             path: self.path.clone(),
         })?;
 
@@ -81,7 +81,7 @@ pub struct AsLoaded<'a> {
     pub fade_in: Option<f32>,
     pub fade_out: Option<f32>,
     pub gain: f32,
-    wav_reader: &'a mut hound::WavReader<fs::File>,
+    wav_reader: &'a mut hound::WavReader<io::BufReader<fs::File>>,
 }
 
 impl<'a> AsLoaded<'a> {

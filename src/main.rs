@@ -27,10 +27,12 @@ fn main() {
                 let time_secs = (len / u32::from(channels)) as f32 / sample_rate as f32;
                 println!("length: {:.2}s", time_secs);
 
-                match source.next_chunk(5000) {
-                    Ok(chunk) => println!("5000th sample: {}", chunk[4999]),
-                    Err(e) => println!("could not read first 5000 samples: {}", e),
+                let time = std::time::Instant::now();
+                match source.next_chunk(10000) {
+                    Ok(chunk) => println!("10000th sample: {}", chunk[9999]),
+                    Err(e) => println!("could not read first 10000 samples: {}", e),
                 }
+                println!("(read in {:?})", time.elapsed());
             }
         }
         Err(state::ReadError::OpenError { ref source, .. })
