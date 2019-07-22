@@ -6,6 +6,8 @@ use sample::{types::I24, Sample};
 use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};
 
+use crate::audio;
+
 #[derive(Debug, Snafu)]
 pub enum LoadError {
     #[snafu(display("Failed to load audio file from {}: {}", path.display(), source))]
@@ -33,6 +35,7 @@ pub struct AudioSource {
     pub fade_in: Option<f32>,
     pub fade_out: Option<f32>,
     pub gain: f32,
+    pub connections: Vec<audio::connection::Connection>,
 
     #[serde(skip)]
     pub wav_reader: Option<hound::WavReader<io::BufReader<fs::File>>>,
@@ -68,6 +71,7 @@ impl AudioSource {
                 fade_in: self.fade_in,
                 fade_out: self.fade_out,
                 gain: self.gain,
+                connections: self.connections.as_slice(),
                 wav_reader,
             })
         } else {
@@ -81,6 +85,7 @@ pub struct AsLoaded<'a> {
     pub fade_in: Option<f32>,
     pub fade_out: Option<f32>,
     pub gain: f32,
+    pub connections: &'a [audio::connection::Connection],
     wav_reader: &'a mut hound::WavReader<io::BufReader<fs::File>>,
 }
 

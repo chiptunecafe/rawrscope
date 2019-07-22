@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};
 
+use crate::audio;
+
 #[derive(Debug, Snafu)]
 pub enum ReadError {
     #[snafu(display("Failed to open project from {}: {}", path.display(), source))]
@@ -28,7 +30,7 @@ pub enum WriteError {
 
 #[derive(Default, Deserialize, Serialize)]
 pub struct State {
-    pub audio_sources: Vec<crate::audio::source::AudioSource>,
+    pub audio_sources: Vec<audio::source::AudioSource>,
 }
 
 impl State {
