@@ -60,9 +60,7 @@ pub fn run(state_file: Option<&str>) {
     log::debug!("Submitted 16ms of audio in {:?}", time.elapsed());
 
     let time = std::time::Instant::now();
-    for i in 0..48000 / framerate {
-        log::trace!("{}/{}", i, 48000 / framerate);
-
+    for _ in 0..48000 / framerate {
         use sample::Signal;
         master_mix.next();
     }

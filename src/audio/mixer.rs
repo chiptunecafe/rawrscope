@@ -16,6 +16,7 @@ impl Resampler {
     pub fn new(from: u32, to: u32) -> Self {
         // TODO bounded channel?
         let (tx, rx) = crossbeam_channel::unbounded();
+        tx.send([0.0; 1]).unwrap(); // workaround for converter weirdness
         let interpolator =
             sample::interpolate::Sinc::new(sample::ring_buffer::Fixed::from([[0f32; 1]; 128]));
         Resampler {
@@ -140,7 +141,7 @@ impl sample::Signal for Mixer {
                 match self.resamplers.get_mut(rate) {
                     Some(r) => {
                         for s in &samples.mixed {
-                            r.push_sample(*s)
+                            r.push_sample(*s);
                         }
                     }
                     None => log::warn!("Missing resampler!"),
