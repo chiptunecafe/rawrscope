@@ -1,5 +1,5 @@
 mod args;
-mod audio_source;
+mod audio;
 mod commands;
 mod state;
 

@@ -28,7 +28,7 @@ pub enum WriteError {
 
 #[derive(Default, Deserialize, Serialize)]
 pub struct State {
-    pub audio_sources: Vec<crate::audio_source::AudioSource>,
+    pub audio_sources: Vec<crate::audio::source::AudioSource>,
 }
 
 impl State {
