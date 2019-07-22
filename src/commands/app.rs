@@ -32,7 +32,7 @@ pub fn run(state_file: Option<&str>) {
         None => State::default(),
     };
 
-    let (mut master_mix, master_queue) = mixer::Mixer::new(Some(48000));
+    let (mut master_mix, master_queue) = mixer::Mixer::new(Some(44100));
 
     let framerate = 60;
 
@@ -46,10 +46,15 @@ pub fn run(state_file: Option<&str>) {
         let time_secs = (len / u32::from(channels)) as f32 / sample_rate as f32;
         println!("{}: {:.2}s", source.path().display(), time_secs);
 
-        assert!(channels <= 2);
         let chunk_size = (sample_rate * u32::from(channels)) / framerate;
         // TODO dont panic
-        let chunk = source.next_chunk(chunk_size as usize).unwrap();
+        let chunk = source
+            .next_chunk(chunk_size as usize)
+            .unwrap()
+            .iter()
+            .step_by(channels as usize)
+            .copied()
+            .collect();
         submission.add(sample_rate, chunk);
     }
 
@@ -60,7 +65,7 @@ pub fn run(state_file: Option<&str>) {
     log::debug!("Submitted 16ms of audio in {:?}", time.elapsed());
 
     let time = std::time::Instant::now();
-    for _ in 0..48000 / framerate {
+    for _ in 0..44100 / framerate {
         use sample::Signal;
         master_mix.next();
     }

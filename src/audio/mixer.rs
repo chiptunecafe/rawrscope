@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 // TODO multichannel resamplers/mixers?
 
@@ -6,9 +6,12 @@ type CrossbeamSignal<T> = sample::signal::FromIterator<crossbeam_channel::IntoIt
 
 struct Resampler {
     input: crossbeam_channel::Sender<[f32; 1]>,
-    converter: sample::interpolate::Converter<
-        CrossbeamSignal<[f32; 1]>,
-        sample::interpolate::Sinc<[[f32; 1]; 128]>,
+    queue: VecDeque<[f32; 1]>,
+    converter: Option<
+        sample::interpolate::Converter<
+            CrossbeamSignal<[f32; 1]>,
+            sample::interpolate::Sinc<[[f32; 1]; 128]>,
+        >,
     >,
 }
 
@@ -19,27 +22,45 @@ impl Resampler {
         tx.send([0.0; 1]).unwrap(); // workaround for converter weirdness
         let interpolator =
             sample::interpolate::Sinc::new(sample::ring_buffer::Fixed::from([[0f32; 1]; 128]));
-        Resampler {
-            input: tx,
-            converter: sample::interpolate::Converter::from_hz_to_hz(
+        let converter = if from != to {
+            Some(sample::interpolate::Converter::from_hz_to_hz(
                 sample::signal::from_iter(rx.into_iter()),
                 interpolator,
                 f64::from(from),
                 f64::from(to),
-            ),
+            ))
+        } else {
+            None
+        };
+        Resampler {
+            input: tx,
+            queue: VecDeque::new(),
+            converter,
         }
     }
 
     pub fn push_sample(&mut self, v: f32) {
-        // TODO do not panic
-        self.input.send([v]).expect("could not send sample");
+        self.queue.push_back([v]);
     }
 }
 
 impl sample::Signal for Resampler {
     type Frame = [f32; 1];
     fn next(&mut self) -> [f32; 1] {
-        self.converter.next()
+        let sample = loop {
+            if let Some(sample) = self.queue.pop_front() {
+                break sample;
+            }
+        };
+
+        if let Some(conv) = &mut self.converter {
+            self.input
+                .send(sample)
+                .expect("could not send sample to resampler");
+            conv.next()
+        } else {
+            sample
+        }
     }
 }
 
