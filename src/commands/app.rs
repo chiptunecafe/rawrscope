@@ -6,22 +6,27 @@ use tinyfiledialogs as tfd;
 use crate::audio::mixer;
 use crate::state::{self, State};
 
-fn panic_handler(info: &panic::PanicInfo) {
-    let info = if let Some(info) = info.payload().downcast_ref::<&str>() {
-        info
-    } else {
-        "No additional information."
-    };
+type PanicHandler = Box<dyn Fn(&panic::PanicInfo) + Sync + Send + 'static>;
+fn panic_handler(old_handler: PanicHandler) -> PanicHandler {
+    Box::new(move |info: &panic::PanicInfo| {
+        old_handler(info);
 
-    tfd::message_box_ok(
-        "Oops!",
-        &format!("rawrscope encontered an unrecoverable error!\n{}", info),
-        tfd::MessageBoxIcon::Error,
-    );
+        let info = if let Some(info) = info.payload().downcast_ref::<&str>() {
+            info
+        } else {
+            "No additional information."
+        };
+
+        tfd::message_box_ok(
+            "Oops!",
+            &format!("rawrscope encontered an unrecoverable error!\n{}", info),
+            tfd::MessageBoxIcon::Error,
+        );
+    })
 }
 
 pub fn run(state_file: Option<&str>) {
-    panic::set_hook(Box::new(panic_handler));
+    panic::set_hook(panic_handler(panic::take_hook()));
 
     let mut state = match state_file {
         Some(path) => match State::from_file(path) {
