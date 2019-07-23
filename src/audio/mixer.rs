@@ -1,30 +1,49 @@
+use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
+use std::rc::Rc;
 
 // TODO multichannel resamplers/mixers?
 
-type CrossbeamSignal<T> = sample::signal::FromIterator<crossbeam_channel::IntoIter<T>>;
+struct Drain<T> {
+    deque: Rc<RefCell<VecDeque<T>>>,
+}
 
-struct Resampler {
-    input: crossbeam_channel::Sender<[f32; 1]>,
-    queue: VecDeque<[f32; 1]>,
+impl<T> Drain<T> {
+    fn new(deque: Rc<RefCell<VecDeque<T>>>) -> Self {
+        Drain { deque }
+    }
+}
+
+impl<T> Iterator for Drain<T> {
+    type Item = T;
+    fn next(&mut self) -> Option<T> {
+        self.deque.borrow_mut().pop_front()
+    }
+}
+
+pub trait Resampler: sample::Signal<Frame = [f32; 1]> {
+    fn new(from: u32, to: u32) -> Self;
+    fn push_sample(&mut self, sample: f32);
+}
+
+pub struct SincResampler {
+    queue: Rc<RefCell<VecDeque<[f32; 1]>>>,
     converter: Option<
         sample::interpolate::Converter<
-            CrossbeamSignal<[f32; 1]>,
+            sample::signal::FromIterator<Drain<[f32; 1]>>,
             sample::interpolate::Sinc<[[f32; 1]; 128]>,
         >,
     >,
 }
 
-impl Resampler {
-    pub fn new(from: u32, to: u32) -> Self {
-        // TODO bounded channel?
-        let (tx, rx) = crossbeam_channel::unbounded();
-        tx.send([0.0; 1]).unwrap(); // workaround for converter weirdness
+impl Resampler for SincResampler {
+    fn new(from: u32, to: u32) -> Self {
+        let queue = Rc::new(RefCell::new(VecDeque::new()));
         let interpolator =
             sample::interpolate::Sinc::new(sample::ring_buffer::Fixed::from([[0f32; 1]; 128]));
         let converter = if from != to {
             Some(sample::interpolate::Converter::from_hz_to_hz(
-                sample::signal::from_iter(rx.into_iter()),
+                sample::signal::from_iter(Drain::new(queue.clone())),
                 interpolator,
                 f64::from(from),
                 f64::from(to),
@@ -32,34 +51,66 @@ impl Resampler {
         } else {
             None
         };
-        Resampler {
-            input: tx,
-            queue: VecDeque::new(),
-            converter,
-        }
+        SincResampler { queue, converter }
     }
 
-    pub fn push_sample(&mut self, v: f32) {
-        self.queue.push_back([v]);
+    fn push_sample(&mut self, v: f32) {
+        self.queue.borrow_mut().push_back([v]);
     }
 }
 
-impl sample::Signal for Resampler {
+impl sample::Signal for SincResampler {
     type Frame = [f32; 1];
     fn next(&mut self) -> [f32; 1] {
-        let sample = loop {
-            if let Some(sample) = self.queue.pop_front() {
-                break sample;
-            }
-        };
-
         if let Some(conv) = &mut self.converter {
-            self.input
-                .send(sample)
-                .expect("could not send sample to resampler");
             conv.next()
         } else {
-            sample
+            // TODO dont panic
+            self.queue.borrow_mut().pop_front().unwrap()
+        }
+    }
+}
+
+pub struct LinearResampler {
+    queue: Rc<RefCell<VecDeque<[f32; 1]>>>,
+    converter: Option<
+        sample::interpolate::Converter<
+            sample::signal::FromIterator<Drain<[f32; 1]>>,
+            sample::interpolate::Linear<[f32; 1]>,
+        >,
+    >,
+}
+
+impl Resampler for LinearResampler {
+    fn new(from: u32, to: u32) -> Self {
+        let queue = Rc::new(RefCell::new(VecDeque::new()));
+        let interpolator = sample::interpolate::Linear::new([0.0], [0.0]);
+        let converter = if from != to {
+            Some(sample::interpolate::Converter::from_hz_to_hz(
+                sample::signal::from_iter(Drain::new(queue.clone())),
+                interpolator,
+                f64::from(from),
+                f64::from(to),
+            ))
+        } else {
+            None
+        };
+        LinearResampler { queue, converter }
+    }
+
+    fn push_sample(&mut self, v: f32) {
+        self.queue.borrow_mut().push_back([v]);
+    }
+}
+
+impl sample::Signal for LinearResampler {
+    type Frame = [f32; 1];
+    fn next(&mut self) -> [f32; 1] {
+        if let Some(conv) = &mut self.converter {
+            conv.next()
+        } else {
+            // TODO dont panic
+            self.queue.borrow_mut().pop_front().unwrap()
         }
     }
 }
@@ -99,14 +150,14 @@ impl Submission {
 }
 
 // TODO dont resample streams that are already target sample rate
-pub struct Mixer {
+pub struct Mixer<T: Resampler> {
     sample_rate: u32,
     target_sample_rate: Option<u32>,
     submission_queue: crossbeam_channel::Receiver<Submission>,
-    resamplers: HashMap<u32, Resampler>,
+    resamplers: HashMap<u32, T>,
 }
 
-impl Mixer {
+impl<T: Resampler> Mixer<T> {
     pub fn new(target_sample_rate: Option<u32>) -> (Self, crossbeam_channel::Sender<Submission>) {
         let (tx, rx) = crossbeam_channel::unbounded();
         (
@@ -121,7 +172,7 @@ impl Mixer {
     }
 }
 
-impl sample::Signal for Mixer {
+impl<T: Resampler> sample::Signal for Mixer<T> {
     type Frame = [f32; 1];
     fn next(&mut self) -> [f32; 1] {
         // poll for new submission

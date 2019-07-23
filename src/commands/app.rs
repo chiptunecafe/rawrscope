@@ -32,7 +32,7 @@ pub fn run(state_file: Option<&str>) {
         None => State::default(),
     };
 
-    let (mut master_mix, master_queue) = mixer::Mixer::new(Some(44100));
+    let (mut master_mix, master_queue) = mixer::Mixer::<mixer::SincResampler>::new(Some(48000));
 
     let framerate = 60;
 
@@ -65,7 +65,7 @@ pub fn run(state_file: Option<&str>) {
     log::debug!("Submitted 16ms of audio in {:?}", time.elapsed());
 
     let time = std::time::Instant::now();
-    for _ in 0..44100 / framerate {
+    for _ in 0..48000 / framerate {
         use sample::Signal;
         master_mix.next();
     }
