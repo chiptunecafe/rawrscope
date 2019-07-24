@@ -149,7 +149,6 @@ impl Submission {
     }
 }
 
-// TODO dont resample streams that are already target sample rate
 pub struct Mixer<T: Resampler> {
     sample_rate: u32,
     target_sample_rate: Option<u32>,
