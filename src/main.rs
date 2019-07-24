@@ -1,6 +1,7 @@
 mod args;
 mod audio;
 mod commands;
+mod panic;
 mod state;
 
 fn main() {
