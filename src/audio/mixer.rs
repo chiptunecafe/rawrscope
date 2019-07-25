@@ -17,7 +17,11 @@ impl<T> Drain<T> {
 impl<T> Iterator for Drain<T> {
     type Item = T;
     fn next(&mut self) -> Option<T> {
-        self.deque.lock().unwrap().pop_front()
+        loop {
+            if let Some(sample) = self.deque.lock().unwrap().pop_front() {
+                break Some(sample);
+            }
+        }
     }
 }
 
@@ -31,16 +35,18 @@ pub struct SincResampler {
     converter: Option<
         sample::interpolate::Converter<
             sample::signal::FromIterator<Drain<[f32; 1]>>,
-            sample::interpolate::Sinc<[[f32; 1]; 128]>,
+            sample::interpolate::Sinc<[[f32; 1]; 64]>,
         >,
     >,
 }
 
 impl Resampler for SincResampler {
     fn new(from: u32, to: u32) -> Self {
-        let queue = Arc::new(Mutex::new(VecDeque::new()));
+        let mut deque = VecDeque::new();
+        deque.push_back([0.0; 1]);
+        let queue = Arc::new(Mutex::new(deque));
         let interpolator =
-            sample::interpolate::Sinc::new(sample::ring_buffer::Fixed::from([[0f32; 1]; 128]));
+            sample::interpolate::Sinc::new(sample::ring_buffer::Fixed::from([[0f32; 1]; 64]));
         let converter = if from != to {
             Some(sample::interpolate::Converter::from_hz_to_hz(
                 sample::signal::from_iter(Drain::new(queue.clone())),
@@ -83,7 +89,9 @@ pub struct LinearResampler {
 
 impl Resampler for LinearResampler {
     fn new(from: u32, to: u32) -> Self {
-        let queue = Arc::new(Mutex::new(VecDeque::new()));
+        let mut deque = VecDeque::new();
+        deque.push_back([0.0; 1]);
+        let queue = Arc::new(Mutex::new(deque));
         let interpolator = sample::interpolate::Linear::new([0.0], [0.0]);
         let converter = if from != to {
             Some(sample::interpolate::Converter::from_hz_to_hz(
@@ -128,19 +136,20 @@ impl Submission {
     }
 
     // TODO possibly wonky treatment of differently sized streams
-    pub fn add(&mut self, sample_rate: u32, samples: Vec<f32>) {
+    pub fn add<I: IntoIterator<Item = f32>>(&mut self, sample_rate: u32, samples: I) {
+        let iter = samples.into_iter();
         match self.0.get_mut(&sample_rate) {
             Some(stream) => {
                 stream.num_streams += 1;
-                for (i, v) in stream.mixed.iter_mut().enumerate() {
-                    if i < samples.len() {
-                        *v += samples[i];
+                for (i, v) in iter.enumerate() {
+                    if i < stream.mixed.len() {
+                        stream.mixed[i] = v;
                     }
                 }
             }
             None => {
                 let stream = MixedStream {
-                    mixed: samples,
+                    mixed: iter.collect(),
                     num_streams: 1,
                 };
                 self.0.insert(sample_rate, stream);

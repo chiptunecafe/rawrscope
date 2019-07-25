@@ -93,17 +93,16 @@ pub fn run(state_file: Option<&str>) {
                 .collect::<Vec<_>>();
 
             for conn in source.connections {
-                let channel_chunk = chunk
+                let channel_iter = chunk
                     .iter()
                     .skip(conn.channel as usize)
                     .step_by(channels as usize)
-                    .copied()
-                    .collect::<Vec<_>>();
+                    .copied();
                 match conn.target {
                     ConnectionTarget::Master => {
                         match submissions.get_mut(conn.target_channel as usize) {
                             // TODO maybe dont clone
-                            Some(sub) => sub.add(sample_rate, channel_chunk),
+                            Some(sub) => sub.add(sample_rate, channel_iter),
                             None => log::warn!(
                                 "Invalid connection to master channel {}",
                                 conn.target_channel
