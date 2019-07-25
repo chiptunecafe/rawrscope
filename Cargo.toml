@@ -6,7 +6,9 @@ edition = "2018"
 
 [dependencies]
 clap = "2.33.0"
+cpal = "0.10.0"
 crossbeam-channel = "0.3.8"
+failure = "0.1.5"
 fern = { version = "0.5.8", features = ["colored"] }
 hound = "3.4.0"
 log = "0.4.7"

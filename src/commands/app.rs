@@ -1,7 +1,9 @@
 use std::io;
 use std::panic::{set_hook, take_hook};
 
-use crate::audio::mixer;
+use cpal::traits::HostTrait;
+
+use crate::audio::{connection::ConnectionTarget, mixer, playback};
 use crate::panic;
 use crate::state::{self, State};
 
@@ -36,42 +38,79 @@ pub fn run(state_file: Option<&str>) {
         None => State::default(),
     };
 
-    let (mut master_mix, master_queue) = mixer::Mixer::<mixer::SincResampler>::new(Some(48000));
+    let audio_host = cpal::default_host();
+    let audio_dev = match audio_host.default_output_device() {
+        Some(d) => d,
+        None => {
+            log::error!("No output device available!");
+            return;
+        }
+    };
 
-    let framerate = 60;
+    let master = match playback::Player::new(audio_host, audio_dev) {
+        Ok(p) => p,
+        Err(e) => {
+            log::error!("{}", e);
+            return;
+        }
+    };
 
-    let mut submission = mixer::Submission::new();
-    let time = std::time::Instant::now();
-    for mut source in state.audio_sources.iter_mut().filter_map(|s| s.as_loaded()) {
+    for source in state.audio_sources.iter_mut().filter_map(|s| s.as_loaded()) {
         let channels = source.spec().channels;
         let sample_rate = source.spec().sample_rate;
         let len = source.len();
 
         let time_secs = (len / u32::from(channels)) as f32 / sample_rate as f32;
         println!("{}: {:.2}s", source.path().display(), time_secs);
-
-        let chunk_size = (sample_rate * u32::from(channels)) / framerate;
-        // TODO dont panic
-        let chunk = source
-            .next_chunk(chunk_size as usize)
-            .unwrap()
-            .iter()
-            .step_by(channels as usize)
-            .copied()
-            .collect();
-        submission.add(sample_rate, chunk);
     }
 
-    if let Err(e) = master_queue.send(submission) {
-        log::error!("Failed to submit 16ms of audio: {}", e);
-    }
+    let framerate = 60;
+    let mut loaded_sources = state
+        .audio_sources
+        .iter_mut()
+        .filter_map(|s| s.as_loaded())
+        .collect::<Vec<_>>();
+    loop {
+        let mut submissions = Vec::new();
+        for _ in 0..master.channels() {
+            submissions.push(mixer::Submission::new());
+        }
 
-    log::debug!("Submitted 16ms of audio in {:?}", time.elapsed());
+        for source in &mut loaded_sources {
+            // let channels = source.spec().channels;
+            let sample_rate = source.spec().sample_rate;
 
-    let time = std::time::Instant::now();
-    for _ in 0..48000 / framerate {
-        use sample::Signal;
-        master_mix.next();
+            let chunk_size = (sample_rate) / framerate;
+            // TODO dont panic
+            // TODO consider multichannel source
+            let chunk = source
+                .next_chunk(chunk_size as usize)
+                .unwrap()
+                .iter()
+                .copied()
+                .collect::<Vec<f32>>();
+
+            for conn in source.connections {
+                match conn.target {
+                    ConnectionTarget::Master => {
+                        match submissions.get_mut(conn.target_channel as usize) {
+                            // TODO maybe dont clone
+                            Some(sub) => sub.add(sample_rate, chunk.clone()),
+                            None => log::warn!(
+                                "Invalid connection to master channel {}",
+                                conn.target_channel
+                            ),
+                        }
+                    }
+                    _ => unimplemented!(),
+                }
+            }
+        }
+
+        for (i, sub) in submissions.drain(..).enumerate() {
+            if let Err(e) = master.submit(i, sub) {
+                log::error!("Failed to submit to master channel {}: {}", i, e);
+            }
+        }
     }
-    log::debug!("Mixed 16ms of audio in {:?}", time.elapsed());
 }
