@@ -80,25 +80,30 @@ pub fn run(state_file: Option<&str>) {
         }
 
         for source in &mut loaded_sources {
-            // let channels = source.spec().channels;
+            let channels = source.spec().channels;
             let sample_rate = source.spec().sample_rate;
 
-            let chunk_size = (sample_rate) / framerate;
+            let chunk_size = (sample_rate * u32::from(channels)) / framerate;
             // TODO dont panic
-            // TODO consider multichannel source
             let chunk = source
                 .next_chunk(chunk_size as usize)
                 .unwrap()
                 .iter()
                 .copied()
-                .collect::<Vec<f32>>();
+                .collect::<Vec<_>>();
 
             for conn in source.connections {
+                let channel_chunk = chunk
+                    .iter()
+                    .skip(conn.channel as usize)
+                    .step_by(channels as usize)
+                    .copied()
+                    .collect::<Vec<_>>();
                 match conn.target {
                     ConnectionTarget::Master => {
                         match submissions.get_mut(conn.target_channel as usize) {
                             // TODO maybe dont clone
-                            Some(sub) => sub.add(sample_rate, chunk.clone()),
+                            Some(sub) => sub.add(sample_rate, channel_chunk),
                             None => log::warn!(
                                 "Invalid connection to master channel {}",
                                 conn.target_channel
