@@ -65,12 +65,15 @@ pub fn run(state_file: Option<&str>) {
     }
 
     let framerate = 60;
+    let frame_len = std::time::Duration::from_micros(1_000_000 / u64::from(framerate));
     let mut loaded_sources = state
         .audio_sources
         .iter_mut()
         .filter_map(|s| s.as_loaded())
         .collect::<Vec<_>>();
     loop {
+        let st = std::time::Instant::now();
+
         let mut submissions = Vec::new();
         for _ in 0..master.channels() {
             submissions.push(mixer::Submission::new());
@@ -112,5 +115,8 @@ pub fn run(state_file: Option<&str>) {
                 log::error!("Failed to submit to master channel {}: {}", i, e);
             }
         }
+
+        let elapsed = st.elapsed();
+        std::thread::sleep((frame_len - elapsed) / 2);
     }
 }
