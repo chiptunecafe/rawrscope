@@ -1,7 +1,11 @@
 use std::thread;
 
-use cpal::traits::{DeviceTrait, EventLoopTrait, HostTrait};
+use cpal::{
+    traits::{DeviceTrait, EventLoopTrait, HostTrait},
+    UnknownTypeOutputBuffer as UOut,
+};
 use failure::Fail;
+use sample::Signal;
 use snafu::{OptionExt, ResultExt, Snafu};
 
 use crate::audio::mixer;
@@ -79,6 +83,30 @@ impl Player {
                         return;
                     }
                 };
+
+                match stream_data {
+                    cpal::StreamData::Output {
+                        buffer: UOut::U16(mut buffer),
+                    } => {
+                        unimplemented!();
+                    }
+                    cpal::StreamData::Output {
+                        buffer: UOut::I16(mut buffer),
+                    } => {
+                        unimplemented!();
+                    }
+                    cpal::StreamData::Output {
+                        buffer: UOut::F32(mut buffer),
+                    } => {
+                        for (i, elem) in buffer.iter_mut().enumerate() {
+                            // TODO use channels instead of mixers len?
+                            let channel = i % mixers.len();
+                            let sample = mixers[channel].next();
+                            *elem = sample[0];
+                        }
+                    }
+                    _ => (),
+                }
             })
         });
 

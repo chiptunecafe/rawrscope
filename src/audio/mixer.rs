@@ -1,15 +1,15 @@
-use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 // TODO multichannel resamplers/mixers?
+// TODO maybe dont mutex
 
 struct Drain<T> {
-    deque: Rc<RefCell<VecDeque<T>>>,
+    deque: Arc<Mutex<VecDeque<T>>>,
 }
 
 impl<T> Drain<T> {
-    fn new(deque: Rc<RefCell<VecDeque<T>>>) -> Self {
+    fn new(deque: Arc<Mutex<VecDeque<T>>>) -> Self {
         Drain { deque }
     }
 }
@@ -17,7 +17,7 @@ impl<T> Drain<T> {
 impl<T> Iterator for Drain<T> {
     type Item = T;
     fn next(&mut self) -> Option<T> {
-        self.deque.borrow_mut().pop_front()
+        self.deque.lock().unwrap().pop_front()
     }
 }
 
@@ -27,7 +27,7 @@ pub trait Resampler: sample::Signal<Frame = [f32; 1]> {
 }
 
 pub struct SincResampler {
-    queue: Rc<RefCell<VecDeque<[f32; 1]>>>,
+    queue: Arc<Mutex<VecDeque<[f32; 1]>>>,
     converter: Option<
         sample::interpolate::Converter<
             sample::signal::FromIterator<Drain<[f32; 1]>>,
@@ -38,7 +38,7 @@ pub struct SincResampler {
 
 impl Resampler for SincResampler {
     fn new(from: u32, to: u32) -> Self {
-        let queue = Rc::new(RefCell::new(VecDeque::new()));
+        let queue = Arc::new(Mutex::new(VecDeque::new()));
         let interpolator =
             sample::interpolate::Sinc::new(sample::ring_buffer::Fixed::from([[0f32; 1]; 128]));
         let converter = if from != to {
@@ -55,7 +55,7 @@ impl Resampler for SincResampler {
     }
 
     fn push_sample(&mut self, v: f32) {
-        self.queue.borrow_mut().push_back([v]);
+        self.queue.lock().unwrap().push_back([v]);
     }
 }
 
@@ -66,13 +66,13 @@ impl sample::Signal for SincResampler {
             conv.next()
         } else {
             // TODO dont panic
-            self.queue.borrow_mut().pop_front().unwrap()
+            self.queue.lock().unwrap().pop_front().unwrap()
         }
     }
 }
 
 pub struct LinearResampler {
-    queue: Rc<RefCell<VecDeque<[f32; 1]>>>,
+    queue: Arc<Mutex<VecDeque<[f32; 1]>>>,
     converter: Option<
         sample::interpolate::Converter<
             sample::signal::FromIterator<Drain<[f32; 1]>>,
@@ -83,7 +83,7 @@ pub struct LinearResampler {
 
 impl Resampler for LinearResampler {
     fn new(from: u32, to: u32) -> Self {
-        let queue = Rc::new(RefCell::new(VecDeque::new()));
+        let queue = Arc::new(Mutex::new(VecDeque::new()));
         let interpolator = sample::interpolate::Linear::new([0.0], [0.0]);
         let converter = if from != to {
             Some(sample::interpolate::Converter::from_hz_to_hz(
@@ -99,7 +99,7 @@ impl Resampler for LinearResampler {
     }
 
     fn push_sample(&mut self, v: f32) {
-        self.queue.borrow_mut().push_back([v]);
+        self.queue.lock().unwrap().push_back([v]);
     }
 }
 
@@ -110,7 +110,7 @@ impl sample::Signal for LinearResampler {
             conv.next()
         } else {
             // TODO dont panic
-            self.queue.borrow_mut().pop_front().unwrap()
+            self.queue.lock().unwrap().pop_front().unwrap()
         }
     }
 }
