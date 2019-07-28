@@ -6,7 +6,7 @@ use cpal::{
 };
 use failure::Fail;
 use sample::{Sample, Signal};
-use snafu::{OptionExt, ResultExt, Snafu};
+use snafu::{ResultExt, Snafu};
 
 use crate::audio::mixer;
 
@@ -17,12 +17,10 @@ use crate::audio::mixer;
 
 #[derive(Debug, Snafu)]
 pub enum CreateError {
-    #[snafu(display("Failed to query supported output formats: {}", source))]
-    FormatQueryError {
-        source: failure::Compat<cpal::SupportedFormatsError>,
+    #[snafu(display("Failed to get output format for device: {}", source))]
+    NoOutputFormats {
+        source: failure::Compat<cpal::DefaultFormatError>,
     },
-    #[snafu(display("No available audio output formats for the selected device!"))]
-    NoOutputFormats,
     #[snafu(display("Failed to initialize audio output stream: {}", source))]
     StreamCreateError {
         source: failure::Compat<cpal::BuildStreamError>,
@@ -43,15 +41,10 @@ impl Player {
     pub fn new(host: cpal::Host, device: cpal::Device) -> Result<Self, CreateError> {
         let ev = host.event_loop();
 
-        let formats = device
-            .supported_output_formats()
-            .map_err(|e| e.compat()) // not using failure::ResultExt due to conflict with snafu
-            .context(FormatQueryError)?;
-
-        let format = formats
-            .max_by(cpal::SupportedFormat::cmp_default_heuristics)
-            .context(NoOutputFormats)?
-            .with_max_sample_rate();
+        let format = device
+            .default_output_format()
+            .map_err(|e| e.compat())
+            .context(NoOutputFormats)?;
 
         let mut submission_queues = Vec::new();
         let mut mixers = Vec::new();
