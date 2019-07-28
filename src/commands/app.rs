@@ -1,14 +1,17 @@
 use std::io;
 use std::panic::{set_hook, take_hook};
 
-use cpal::traits::HostTrait;
+use cpal::traits::{DeviceTrait, HostTrait};
 
 use crate::audio::{connection::ConnectionTarget, mixer, playback};
+use crate::config;
 use crate::panic;
 use crate::state::{self, State};
 
 pub fn run(state_file: Option<&str>) {
     set_hook(panic::dialog(take_hook()));
+
+    let config = config::Config::load();
 
     let mut state = match state_file {
         Some(path) => match State::from_file(path) {
@@ -38,13 +41,43 @@ pub fn run(state_file: Option<&str>) {
         None => State::default(),
     };
 
+    // TODO USE HOST FROM CONFIG FILE!!!!!
     let audio_host = cpal::default_host();
+    /*
     let audio_dev = match audio_host.default_output_device() {
         Some(d) => d,
         None => {
             log::error!("No output device available!");
             return;
         }
+    };
+    */
+    let audio_dev = match config.audio.device {
+        Some(dev_name) => match audio_host.output_devices() {
+            Ok(mut iter) => match iter.find(|dev| {
+                dev.name()
+                    .ok()
+                    .map(|name| name == dev_name)
+                    .unwrap_or(false)
+            }) {
+                Some(d) => d,
+                None => {
+                    log::error!("Output device \"{}\" does not exist!", dev_name);
+                    return;
+                }
+            },
+            Err(e) => {
+                log::error!("Failed to query output devices: {}", e);
+                return;
+            }
+        },
+        None => match audio_host.default_output_device() {
+            Some(d) => d,
+            None => {
+                log::error!("No output device available!");
+                return;
+            }
+        },
     };
 
     let master = match playback::Player::new(audio_host, audio_dev) {
