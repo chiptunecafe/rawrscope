@@ -58,7 +58,7 @@ impl Player {
 
         for _ in 0..format.channels {
             let (mixer, sub) =
-                mixer::Mixer::<mixer::SincResampler>::new(Some(format.sample_rate.0));
+                mixer::Mixer::<mixer::LinearResampler>::new(Some(format.sample_rate.0));
 
             submission_queues.push(sub);
             mixers.push(mixer);
