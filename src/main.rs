@@ -1,6 +1,7 @@
 mod args;
 mod audio;
 mod commands;
+mod config;
 mod panic;
 mod state;
 
@@ -29,6 +30,7 @@ fn main() {
 
     match matches.subcommand_name() {
         None => commands::app::run(matches.value_of("PROJECT")),
+        Some("configure_audio") => commands::configure_audio::run(),
         _ => unimplemented!(),
     }
 }

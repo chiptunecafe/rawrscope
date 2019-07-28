@@ -10,5 +10,9 @@ pub fn get() -> clap::App<'static, 'static> {
 
         (@arg PROJECT: "Project file to open")
         (@arg VERBOSE: -v ... "Logging verbosity")
+
+        (@subcommand configure_audio =>
+            (about: "Select audio host and output")
+        )
     )
 }
