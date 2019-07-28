@@ -5,7 +5,7 @@ use cpal::{
     UnknownTypeOutputBuffer as UOut,
 };
 use failure::Fail;
-use sample::Signal;
+use sample::{Sample, Signal};
 use snafu::{OptionExt, ResultExt, Snafu};
 
 use crate::audio::mixer;
@@ -43,13 +43,13 @@ impl Player {
     pub fn new(host: cpal::Host, device: cpal::Device) -> Result<Self, CreateError> {
         let ev = host.event_loop();
 
-        let mut formats = device
+        let formats = device
             .supported_output_formats()
             .map_err(|e| e.compat()) // not using failure::ResultExt due to conflict with snafu
             .context(FormatQueryError)?;
 
         let format = formats
-            .next()
+            .max_by(cpal::SupportedFormat::cmp_default_heuristics)
             .context(NoOutputFormats)?
             .with_max_sample_rate();
 
@@ -88,12 +88,22 @@ impl Player {
                     cpal::StreamData::Output {
                         buffer: UOut::U16(mut buffer),
                     } => {
-                        unimplemented!();
+                        for (i, elem) in buffer.iter_mut().enumerate() {
+                            // TODO use channels instead of mixers len?
+                            let channel = i % mixers.len();
+                            let sample = mixers[channel].next();
+                            *elem = sample[0].to_sample();
+                        }
                     }
                     cpal::StreamData::Output {
                         buffer: UOut::I16(mut buffer),
                     } => {
-                        unimplemented!();
+                        for (i, elem) in buffer.iter_mut().enumerate() {
+                            // TODO use channels instead of mixers len?
+                            let channel = i % mixers.len();
+                            let sample = mixers[channel].next();
+                            *elem = sample[0].to_sample();
+                        }
                     }
                     cpal::StreamData::Output {
                         buffer: UOut::F32(mut buffer),
