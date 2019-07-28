@@ -143,7 +143,7 @@ impl Submission {
                 stream.num_streams += 1;
                 for (i, v) in iter.enumerate() {
                     if i < stream.mixed.len() {
-                        stream.mixed[i] = v;
+                        stream.mixed[i] += v;
                     }
                 }
             }
