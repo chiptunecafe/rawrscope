@@ -43,15 +43,6 @@ pub fn run(state_file: Option<&str>) {
 
     // TODO USE HOST FROM CONFIG FILE!!!!!
     let audio_host = cpal::default_host();
-    /*
-    let audio_dev = match audio_host.default_output_device() {
-        Some(d) => d,
-        None => {
-            log::error!("No output device available!");
-            return;
-        }
-    };
-    */
     let audio_dev = match config.audio.device {
         Some(dev_name) => match audio_host.output_devices() {
             Ok(mut iter) => match iter.find(|dev| {
@@ -80,7 +71,7 @@ pub fn run(state_file: Option<&str>) {
         },
     };
 
-    let master = match playback::Player::new(audio_host, audio_dev) {
+    let mut master = match playback::Player::new(audio_host, audio_dev) {
         Ok(p) => p,
         Err(e) => {
             log::error!("{}", e);
@@ -88,16 +79,30 @@ pub fn run(state_file: Option<&str>) {
         }
     };
 
+    let mut mixer_config = mixer::MixerBuilder::new();
+    mixer_config.channels(master.channels() as usize);
+    mixer_config.target_sample_rate(master.sample_rate());
+
     for source in state.audio_sources.iter_mut().filter_map(|s| s.as_loaded()) {
         let channels = source.spec().channels;
         let sample_rate = source.spec().sample_rate;
         let len = source.len();
 
+        mixer_config.source_rate(sample_rate);
+
         let time_secs = (len / u32::from(channels)) as f32 / sample_rate as f32;
         println!("{}: {:.2}s", source.path().display(), time_secs);
     }
 
-    let framerate = 60;
+    if let Err(e) = master.rebuild_mixer(mixer_config) {
+        log::warn!("Failed to rebuild master mixer: {}", e);
+    }
+
+    let sub_builder = master.submission_builder();
+
+    let framerate = 60u16;
+    let frame_secs = 1.0 / f32::from(framerate);
+
     let frame_len = std::time::Duration::from_micros(1_000_000 / u64::from(framerate));
     let mut loaded_sources = state
         .audio_sources
@@ -107,19 +112,20 @@ pub fn run(state_file: Option<&str>) {
     loop {
         let st = std::time::Instant::now();
 
-        let mut submissions = Vec::new();
-        for _ in 0..master.channels() {
-            submissions.push(mixer::Submission::new());
-        }
+        let mut sub = sub_builder.create(frame_secs);
 
         for source in &mut loaded_sources {
             let channels = source.spec().channels;
             let sample_rate = source.spec().sample_rate;
 
-            let chunk_size = (sample_rate * u32::from(channels)) / framerate;
+            let chunk_len = sub
+                .length_of_channel(sample_rate)
+                .expect("submission missing sample rate!")
+                * channels as usize;
+
             // TODO dont panic
             let chunk = source
-                .next_chunk(chunk_size as usize)
+                .next_chunk(chunk_len)
                 .unwrap()
                 .iter()
                 .copied()
@@ -133,24 +139,15 @@ pub fn run(state_file: Option<&str>) {
                     .copied();
                 match conn.target {
                     ConnectionTarget::Master => {
-                        match submissions.get_mut(conn.target_channel as usize) {
-                            // TODO maybe dont clone
-                            Some(sub) => sub.add(sample_rate, channel_iter),
-                            None => log::warn!(
-                                "Invalid connection to master channel {}",
-                                conn.target_channel
-                            ),
-                        }
+                        sub.add(sample_rate, conn.target_channel as usize, channel_iter);
                     }
                     _ => unimplemented!(),
                 }
             }
         }
 
-        for (i, sub) in submissions.drain(..).enumerate() {
-            if let Err(e) = master.submit(i, sub) {
-                log::error!("Failed to submit to master channel {}: {}", i, e);
-            }
+        if let Err(e) = master.submit(sub) {
+            log::error!("Failed to submit audio to master: {}", e);
         }
 
         let elapsed = st.elapsed();

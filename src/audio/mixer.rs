@@ -1,241 +1,179 @@
-use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
 
-// TODO multichannel resamplers/mixers?
-// TODO maybe dont mutex
-
-struct Drain<T> {
-    deque: Arc<Mutex<VecDeque<T>>>,
+pub struct SubmissionBuilder {
+    channels: usize,
+    rates: Vec<u32>,
 }
 
-impl<T> Drain<T> {
-    fn new(deque: Arc<Mutex<VecDeque<T>>>) -> Self {
-        Drain { deque }
-    }
-}
+impl SubmissionBuilder {
+    /// length is in secs
+    pub fn create(&self, length: f32) -> Submission {
+        let mut streams = HashMap::new();
 
-impl<T> Iterator for Drain<T> {
-    type Item = T;
-    fn next(&mut self) -> Option<T> {
-        loop {
-            if let Some(sample) = self.deque.lock().unwrap().pop_front() {
-                break Some(sample);
+        for rate in &self.rates {
+            if !streams.contains_key(rate) {
+                let stream = vec![0f32; ((*rate as f32) * length) as usize * self.channels];
+                streams.insert(*rate, stream);
             }
         }
-    }
-}
 
-pub trait Resampler: sample::Signal<Frame = [f32; 1]> {
-    fn new(from: u32, to: u32) -> Self;
-    fn push_sample(&mut self, sample: f32);
-}
-
-pub struct SincResampler {
-    queue: Arc<Mutex<VecDeque<[f32; 1]>>>,
-    converter: Option<
-        sample::interpolate::Converter<
-            sample::signal::FromIterator<Drain<[f32; 1]>>,
-            sample::interpolate::Sinc<[[f32; 1]; 64]>,
-        >,
-    >,
-}
-
-impl Resampler for SincResampler {
-    fn new(from: u32, to: u32) -> Self {
-        let mut deque = VecDeque::new();
-        deque.push_back([0.0; 1]);
-        let queue = Arc::new(Mutex::new(deque));
-        let interpolator =
-            sample::interpolate::Sinc::new(sample::ring_buffer::Fixed::from([[0f32; 1]; 64]));
-        let converter = if from != to {
-            Some(sample::interpolate::Converter::from_hz_to_hz(
-                sample::signal::from_iter(Drain::new(queue.clone())),
-                interpolator,
-                f64::from(from),
-                f64::from(to),
-            ))
-        } else {
-            None
-        };
-        SincResampler { queue, converter }
-    }
-
-    fn push_sample(&mut self, v: f32) {
-        self.queue.lock().unwrap().push_back([v]);
-    }
-}
-
-impl sample::Signal for SincResampler {
-    type Frame = [f32; 1];
-    fn next(&mut self) -> [f32; 1] {
-        if let Some(conv) = &mut self.converter {
-            conv.next()
-        } else {
-            // TODO dont panic
-            self.queue.lock().unwrap().pop_front().unwrap()
+        Submission {
+            streams,
+            channels: self.channels,
+            length,
         }
     }
 }
 
-pub struct LinearResampler {
-    queue: Arc<Mutex<VecDeque<[f32; 1]>>>,
-    converter: Option<
-        sample::interpolate::Converter<
-            sample::signal::FromIterator<Drain<[f32; 1]>>,
-            sample::interpolate::Linear<[f32; 1]>,
-        >,
-    >,
+pub struct Submission {
+    streams: HashMap<u32, Vec<f32>>,
+    channels: usize,
+    length: f32,
 }
-
-impl Resampler for LinearResampler {
-    fn new(from: u32, to: u32) -> Self {
-        let mut deque = VecDeque::new();
-        deque.push_back([0.0; 1]);
-        let queue = Arc::new(Mutex::new(deque));
-        let interpolator = sample::interpolate::Linear::new([0.0], [0.0]);
-        let converter = if from != to {
-            Some(sample::interpolate::Converter::from_hz_to_hz(
-                sample::signal::from_iter(Drain::new(queue.clone())),
-                interpolator,
-                f64::from(from),
-                f64::from(to),
-            ))
-        } else {
-            None
-        };
-        LinearResampler { queue, converter }
-    }
-
-    fn push_sample(&mut self, v: f32) {
-        self.queue.lock().unwrap().push_back([v]);
-    }
-}
-
-impl sample::Signal for LinearResampler {
-    type Frame = [f32; 1];
-    fn next(&mut self) -> [f32; 1] {
-        if let Some(conv) = &mut self.converter {
-            conv.next()
-        } else {
-            // TODO dont panic
-            self.queue.lock().unwrap().pop_front().unwrap()
-        }
-    }
-}
-
-pub struct MixedStream {
-    pub mixed: Vec<f32>,
-    pub num_streams: usize,
-}
-
-pub struct Submission(HashMap<u32, MixedStream>);
 
 impl Submission {
-    pub fn new() -> Self {
-        Submission(HashMap::new())
-    }
+    pub fn add<I: IntoIterator<Item = f32>>(&mut self, rate: u32, channel: usize, samples: I) {
+        if channel >= self.channels {
+            log::warn!(
+                "Writing to nonexistent channel {}, previous channels will be overwritten!",
+                channel
+            );
+        }
 
-    // TODO possibly wonky treatment of differently sized streams
-    pub fn add<I: IntoIterator<Item = f32>>(&mut self, sample_rate: u32, samples: I) {
-        let iter = samples.into_iter();
-        match self.0.get_mut(&sample_rate) {
+        let mut sample_iter = samples.into_iter();
+        match self.streams.get_mut(&rate) {
             Some(stream) => {
-                stream.num_streams += 1;
-                for (i, v) in iter.enumerate() {
-                    if i < stream.mixed.len() {
-                        stream.mixed[i] += v;
-                    }
+                for v in stream.iter_mut().skip(channel).step_by(self.channels) {
+                    *v += sample_iter.next().unwrap_or(0.0);
                 }
             }
-            None => {
-                let stream = MixedStream {
-                    mixed: iter.collect(),
-                    num_streams: 1,
-                };
-                self.0.insert(sample_rate, stream);
-            }
+            None => log::warn!("Submission has no {}hz stream!", rate),
         }
+    }
+
+    pub fn length_of_channel(&self, rate: u32) -> Option<usize> {
+        self.streams
+            .get(&rate)
+            .map(Vec::len)
+            .map(|v| v / self.channels)
     }
 }
 
-pub struct Mixer<T: Resampler> {
+pub struct MixerBuilder {
+    channels: usize,
+    sample_rate: Option<u32>,
+    conv_type: samplerate::ConverterType,
+    source_rates: Vec<u32>,
+}
+
+impl MixerBuilder {
+    pub fn new() -> Self {
+        MixerBuilder {
+            channels: 1,
+            sample_rate: None,
+            conv_type: samplerate::ConverterType::SincBestQuality,
+            source_rates: Vec::new(),
+        }
+    }
+
+    pub fn channels(&mut self, channels: usize) -> &mut Self {
+        self.channels = channels;
+        self
+    }
+
+    pub fn target_sample_rate(&mut self, rate: u32) -> &mut Self {
+        self.sample_rate = Some(rate);
+        self
+    }
+
+    pub fn resample_type(&mut self, ty: samplerate::ConverterType) -> &mut Self {
+        self.conv_type = ty;
+        self
+    }
+
+    pub fn source_rate(&mut self, rate: u32) -> &mut Self {
+        self.source_rates.push(rate);
+        self
+    }
+
+    pub fn build<I: Iterator<Item = Submission>>(
+        self,
+        source: I,
+    ) -> Result<Mixer<I>, samplerate::Error> {
+        let sample_rate = match self.sample_rate {
+            Some(r) => r,
+            None => *self.source_rates.iter().max().unwrap_or_else(|| {
+                log::warn!("Mixer was given no source sample rates! Defaulting to 44100...");
+                &44100
+            }),
+        };
+
+        let mut converters = HashMap::new();
+        for rate in self.source_rates {
+            if !converters.contains_key(&rate) {
+                let converter =
+                    samplerate::Samplerate::new(self.conv_type, rate, sample_rate, self.channels)?;
+                converters.insert(rate, converter);
+            }
+        }
+
+        Ok(Mixer {
+            submission_queue: source,
+            channels: self.channels,
+            sample_rate,
+            converters,
+        })
+    }
+}
+
+pub type MixerStream<I> = std::iter::Flatten<Mixer<I>>;
+
+pub struct Mixer<I: Iterator<Item = Submission>> {
+    submission_queue: I,
+    channels: usize,
     sample_rate: u32,
-    target_sample_rate: Option<u32>,
-    submission_queue: crossbeam_channel::Receiver<Submission>,
-    resamplers: HashMap<u32, T>,
+    converters: HashMap<u32, samplerate::Samplerate>,
 }
 
-impl<T: Resampler> Mixer<T> {
-    pub fn new(target_sample_rate: Option<u32>) -> (Self, crossbeam_channel::Sender<Submission>) {
-        let (tx, rx) = crossbeam_channel::unbounded();
-        (
-            Mixer {
-                sample_rate: target_sample_rate.unwrap_or(44100),
-                target_sample_rate,
-                submission_queue: rx,
-                resamplers: HashMap::new(),
-            },
-            tx,
-        )
+impl<I: Iterator<Item = Submission>> Mixer<I> {
+    pub fn submission_builder(&self) -> SubmissionBuilder {
+        SubmissionBuilder {
+            channels: self.channels,
+            rates: self.converters.keys().copied().collect(),
+        }
+    }
+
+    pub fn into_stream(self) -> MixerStream<I> {
+        self.flatten()
     }
 }
 
-impl<T: Resampler> sample::Signal for Mixer<T> {
-    type Frame = [f32; 1];
-    fn next(&mut self) -> [f32; 1] {
-        // poll for new submission
-        if let Ok(sub) = self.submission_queue.try_recv() {
-            // determine optimal sample rate if not forced
-            if self.target_sample_rate.is_none() {
-                let mut rate = self.sample_rate;
-                let mut num_streams = 0;
+impl<I: Iterator<Item = Submission>> Iterator for Mixer<I> {
+    type Item = Vec<f32>;
 
-                let rates = sub.0.iter().map(|(rate, mix)| (rate, mix.num_streams));
+    fn next(&mut self) -> Option<Vec<f32>> {
+        let submission = self.submission_queue.next()?;
 
-                for (new_rate, new_streams) in rates {
-                    if new_streams > num_streams || (new_streams == num_streams && *new_rate > rate)
-                    {
-                        rate = *new_rate;
-                        num_streams = new_streams;
-                    }
-                }
+        // TODO report errors?
+        let resampled_streams = submission.streams.iter().filter_map(|(rate, stream)| {
+            let resampler = self.converters.get(rate)?;
+            resampler.process(stream).ok()
+        });
 
-                log::debug!("New mixer sample rate: {}", rate);
-                self.sample_rate = rate;
-                // must recreate all resamplers
-                self.resamplers.clear();
-            }
+        let chunk_len = (self.sample_rate as f32 * submission.length) as usize * self.channels;
+        let mut chunk = vec![0f32; chunk_len];
 
-            // create new resamplers TODO remove old ones
-            for rate in sub.0.keys() {
-                if !self.resamplers.contains_key(rate) {
-                    log::debug!("Creating new resampler: {} => {}", rate, self.sample_rate);
-                    self.resamplers
-                        .insert(*rate, Resampler::new(*rate, self.sample_rate));
-                }
-            }
-
-            // push submitted samples to resamplers
-            for (rate, samples) in sub.0.iter() {
-                // just ignore if we dont have a resampler for some reason
-                match self.resamplers.get_mut(rate) {
-                    Some(r) => {
-                        for s in &samples.mixed {
-                            r.push_sample(*s);
-                        }
-                    }
-                    None => log::warn!("Missing resampler!"),
-                }
+        for stream in resampled_streams {
+            let mut stream_iter = stream.iter();
+            for v in chunk.iter_mut() {
+                *v += stream_iter.next().unwrap_or(&0f32);
             }
         }
 
-        // read and mix streams
-        let sample = self
-            .resamplers
-            .values_mut()
-            .map(|r| r.next()[0])
-            .sum::<f32>();
-
-        [sample; 1]
+        Some(chunk)
     }
 }
+
+// TODO !!!!! VERIFY THIS !!!!!
+unsafe impl<I: Iterator<Item = Submission>> Send for Mixer<I> {}
+unsafe impl<I: Iterator<Item = Submission>> Sync for Mixer<I> {}

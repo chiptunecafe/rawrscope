@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::thread;
 
 use cpal::{
@@ -5,7 +6,8 @@ use cpal::{
     UnknownTypeOutputBuffer as UOut,
 };
 use failure::Fail;
-use sample::{Sample, Signal};
+use parking_lot::Mutex;
+use sample::Sample;
 use snafu::{ResultExt, Snafu};
 
 use crate::audio::mixer;
@@ -21,6 +23,8 @@ pub enum CreateError {
     NoOutputFormats {
         source: failure::Compat<cpal::DefaultFormatError>,
     },
+    #[snafu(display("Could not create mixer: {}", source))]
+    MixerError { source: samplerate::Error },
     #[snafu(display("Failed to initialize audio output stream: {}", source))]
     StreamCreateError {
         source: failure::Compat<cpal::BuildStreamError>,
@@ -33,8 +37,11 @@ pub enum CreateError {
 
 pub struct Player {
     audio_thread: thread::JoinHandle<()>,
-    submission_queues: Vec<crossbeam_channel::Sender<mixer::Submission>>,
+    submission_builder: mixer::SubmissionBuilder,
+    submission_queue: crossbeam_channel::Sender<mixer::Submission>,
+    mixer_stream: Arc<Mutex<mixer::MixerStream<crossbeam_channel::IntoIter<mixer::Submission>>>>,
     channels: u16,
+    sample_rate: u32,
 }
 
 impl Player {
@@ -46,16 +53,15 @@ impl Player {
             .map_err(|e| e.compat())
             .context(NoOutputFormats)?;
 
-        let mut submission_queues = Vec::new();
-        let mut mixers = Vec::new();
-
-        for _ in 0..format.channels {
-            let (mixer, sub) =
-                mixer::Mixer::<mixer::LinearResampler>::new(Some(format.sample_rate.0));
-
-            submission_queues.push(sub);
-            mixers.push(mixer);
-        }
+        let (submission_queue, sub_rx) = crossbeam_channel::unbounded();
+        let mut mixer_builder = mixer::MixerBuilder::new();
+        mixer_builder.channels(format.channels as usize);
+        mixer_builder.target_sample_rate(format.sample_rate.0);
+        let mixer = mixer_builder
+            .build(sub_rx.into_iter())
+            .context(MixerError)?;
+        let submission_builder = mixer.submission_builder();
+        let mixer_stream = Arc::new(Mutex::new(mixer.into_stream()));
 
         let stream_id = ev
             .build_output_stream(&device, &format)
@@ -67,7 +73,10 @@ impl Player {
             .context(StreamPlayError)?;
 
         log::debug!("Starting audio thread: format={:?}", format);
+        let audio_stream = mixer_stream.clone();
         let audio_thread = thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+
             ev.run(move |_stream_id, stream_res| {
                 let stream_data = match stream_res {
                     Ok(data) => data,
@@ -77,35 +86,28 @@ impl Player {
                     }
                 };
 
+                let mut audio_stream = audio_stream.lock();
+
                 match stream_data {
                     cpal::StreamData::Output {
                         buffer: UOut::U16(mut buffer),
                     } => {
-                        for (i, elem) in buffer.iter_mut().enumerate() {
-                            // TODO use channels instead of mixers len?
-                            let channel = i % mixers.len();
-                            let sample = mixers[channel].next();
-                            *elem = sample[0].to_sample();
+                        for elem in buffer.iter_mut() {
+                            *elem = audio_stream.next().unwrap_or(0f32).to_sample();
                         }
                     }
                     cpal::StreamData::Output {
                         buffer: UOut::I16(mut buffer),
                     } => {
-                        for (i, elem) in buffer.iter_mut().enumerate() {
-                            // TODO use channels instead of mixers len?
-                            let channel = i % mixers.len();
-                            let sample = mixers[channel].next();
-                            *elem = sample[0].to_sample();
+                        for elem in buffer.iter_mut() {
+                            *elem = audio_stream.next().unwrap_or(0f32).to_sample();
                         }
                     }
                     cpal::StreamData::Output {
                         buffer: UOut::F32(mut buffer),
                     } => {
-                        for (i, elem) in buffer.iter_mut().enumerate() {
-                            // TODO use channels instead of mixers len?
-                            let channel = i % mixers.len();
-                            let sample = mixers[channel].next();
-                            *elem = sample[0];
+                        for elem in buffer.iter_mut() {
+                            *elem = audio_stream.next().unwrap_or(0f32);
                         }
                     }
                     _ => (),
@@ -115,26 +117,45 @@ impl Player {
 
         Ok(Player {
             audio_thread,
-            submission_queues,
+            submission_builder,
+            submission_queue,
+            mixer_stream,
             channels: format.channels,
+            sample_rate: format.sample_rate.0,
         })
-    }
-
-    pub fn submit(
-        &self,
-        channel: usize,
-        submission: mixer::Submission,
-    ) -> Result<(), crossbeam_channel::SendError<mixer::Submission>> {
-        match self.submission_queues.get(channel) {
-            Some(queue) => queue.send(submission),
-            None => {
-                log::warn!("Attempted to submit to non-existent channel {}!", channel);
-                Ok(())
-            }
-        }
     }
 
     pub fn channels(&self) -> u16 {
         self.channels
+    }
+
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
+    pub fn submission_builder(&self) -> &mixer::SubmissionBuilder {
+        &self.submission_builder
+    }
+
+    pub fn rebuild_mixer(&mut self, builder: mixer::MixerBuilder) -> Result<(), samplerate::Error> {
+        log::debug!("Rebuilding master mixer...");
+
+        let (submission_queue, sub_rx) = crossbeam_channel::unbounded();
+        let mixer = builder.build(sub_rx.into_iter())?;
+        let submission_builder = mixer.submission_builder();
+        let mixer_stream = mixer.into_stream();
+
+        self.submission_builder = submission_builder;
+        self.submission_queue = submission_queue;
+        *self.mixer_stream.lock() = mixer_stream;
+
+        Ok(())
+    }
+
+    pub fn submit(
+        &self,
+        sub: mixer::Submission,
+    ) -> Result<(), crossbeam_channel::SendError<mixer::Submission>> {
+        self.submission_queue.send(sub)
     }
 }
