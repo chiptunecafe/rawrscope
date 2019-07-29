@@ -35,8 +35,8 @@ More on Pathfinder `gfx-hal` support:
 * \*High-quality trigger generator for external trigger mode
 * \*Audio manipulation tools (trim, fade in/out, gain)
 * \*Node-based audio routing interface
-  * \*Automatic master audio generation
-  * \*Stereo upmixing/downmixing
+  * Automatic master audio generation
+  * Stereo upmixing/downmixing
 * \*Visual templates and presets for a quicker workflow
 * \*Built-in video export
 * \*Arbitrary post-processing shaders
