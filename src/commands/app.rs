@@ -123,12 +123,16 @@ pub fn run(state_file: Option<&str>) {
     let framerate = 60u16;
     let frame_secs = 1.0 / f32::from(framerate);
 
+    let window_ms = 200;
+
     let frame_len = std::time::Duration::from_micros(1_000_000 / u64::from(framerate));
     let mut loaded_sources = state
         .audio_sources
         .iter_mut()
         .filter_map(|s| s.as_loaded())
         .collect::<Vec<_>>();
+
+    let mut frame = 0;
     loop {
         let st = std::time::Instant::now();
 
@@ -138,18 +142,23 @@ pub fn run(state_file: Option<&str>) {
             let channels = source.spec().channels;
             let sample_rate = source.spec().sample_rate;
 
+            let window_len = sample_rate * window_ms / 1000 * u32::from(channels);
+            let window_pos = (sample_rate / u32::from(framerate)) * frame;
+            // TODO dont panic
+
+            let window = source
+                .chunk_at(window_pos, window_len as usize)
+                .unwrap()
+                .iter()
+                .copied()
+                .collect::<Vec<_>>();
+
             let chunk_len = sub
                 .length_of_channel(sample_rate)
                 .expect("submission missing sample rate!")
                 * channels as usize;
 
-            // TODO dont panic
-            let chunk = source
-                .next_chunk(chunk_len)
-                .unwrap()
-                .iter()
-                .copied()
-                .collect::<Vec<_>>();
+            let chunk = &window[0..chunk_len.min(window.len())];
 
             for conn in source.connections {
                 let channel_iter = chunk
@@ -172,5 +181,7 @@ pub fn run(state_file: Option<&str>) {
 
         let elapsed = st.elapsed();
         std::thread::sleep((frame_len - elapsed) / 2);
+
+        frame += 1;
     }
 }
