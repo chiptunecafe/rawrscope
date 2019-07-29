@@ -7,3 +7,7 @@
 *.rprj
 *.wav
 rawrscope.toml
+
+# profiling data
+perf.data
+flamegraph.svg

@@ -20,3 +20,6 @@ serde = { version = "1.0.97", features = ["derive"] }
 snafu = "0.4.1"
 tinyfiledialogs = "3.3.5"
 toml = "0.5.1"
+
+[profile.release]
+debug = true
