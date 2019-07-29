@@ -75,8 +75,6 @@ impl Player {
         log::debug!("Starting audio thread: format={:?}", format);
         let audio_stream = mixer_stream.clone();
         let audio_thread = thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(100));
-
             ev.run(move |_stream_id, stream_res| {
                 let stream_data = match stream_res {
                     Ok(data) => data,
