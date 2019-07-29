@@ -110,11 +110,9 @@ impl MixerBuilder {
 
         let mut converters = HashMap::new();
         for rate in self.source_rates {
-            if !converters.contains_key(&rate) {
-                let converter =
-                    samplerate::Samplerate::new(self.conv_type, rate, sample_rate, self.channels)?;
-                converters.insert(rate, converter);
-            }
+            let converter =
+                samplerate::Samplerate::new(self.conv_type, rate, sample_rate, self.channels)?;
+            converters.entry(rate).or_insert(converter);
         }
 
         Ok(Mixer {
