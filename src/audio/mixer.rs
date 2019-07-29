@@ -71,7 +71,7 @@ impl MixerBuilder {
         MixerBuilder {
             channels: 1,
             sample_rate: None,
-            conv_type: samplerate::ConverterType::SincBestQuality,
+            conv_type: samplerate::ConverterType::SincFastest,
             source_rates: Vec::new(),
         }
     }
