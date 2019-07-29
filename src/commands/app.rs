@@ -41,8 +41,28 @@ pub fn run(state_file: Option<&str>) {
         None => State::default(),
     };
 
-    // TODO USE HOST FROM CONFIG FILE!!!!!
-    let audio_host = cpal::default_host();
+    let audio_host = match config.audio.host {
+        Some(host_name) => {
+            if let Some((id, _n)) = cpal::available_hosts()
+                .iter()
+                .map(|host_id| (host_id, format!("{:?}", host_id)))
+                .find(|(_id, n)| n == &host_name)
+            {
+                cpal::host_from_id(*id).unwrap_or_else(|err| {
+                    log::warn!(
+                        "Could not use host \"{}\": {}, using default...",
+                        host_name,
+                        err
+                    );
+                    cpal::default_host()
+                })
+            } else {
+                log::warn!("Host \"{}\" does not exist! Using default...", host_name);
+                cpal::default_host()
+            }
+        }
+        None => cpal::default_host(),
+    };
     let audio_dev = match config.audio.device {
         Some(dev_name) => match audio_host.output_devices() {
             Ok(mut iter) => match iter.find(|dev| {
