@@ -125,8 +125,14 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     mixer_config.target_sample_rate(master.sample_rate());
 
     for source in state.audio_sources.iter_mut().filter_map(|s| s.as_loaded()) {
-        let sample_rate = source.spec().sample_rate;
-        mixer_config.source_rate(sample_rate);
+        if source
+            .connections
+            .iter()
+            .any(|conn| conn.target == ConnectionTarget::Master)
+        {
+            let sample_rate = source.spec().sample_rate;
+            mixer_config.source_rate(sample_rate);
+        }
     }
 
     if let Err(e) = master.rebuild_mixer(mixer_config) {
