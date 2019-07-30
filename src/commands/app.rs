@@ -155,6 +155,14 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     let sub_builder = master.submission_builder();
     let mut frame = 0;
     loop {
+        if loaded_sources
+            .iter()
+            .all(|source| frame > source.len() / (source.spec().sample_rate / u32::from(framerate)))
+        {
+            std::thread::sleep(frame_len);
+            continue;
+        }
+
         let st = std::time::Instant::now();
 
         let mut sub = sub_builder.create(frame_secs);

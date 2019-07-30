@@ -11,3 +11,4 @@ rawrscope.toml
 # profiling data
 perf.data
 flamegraph.svg
+*.zst
