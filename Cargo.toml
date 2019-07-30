@@ -3,6 +3,7 @@ name = "rawrscope"
 version = "0.1.0"
 authors = ["rytone <rytonemail@gmail.com>"]
 edition = "2018"
+license = "GPL-3.0-or-later"
 
 [dependencies]
 clap = "2.33.0"
