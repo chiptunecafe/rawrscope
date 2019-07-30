@@ -110,9 +110,13 @@ impl MixerBuilder {
 
         let mut converters = HashMap::new();
         for rate in self.source_rates {
-            let converter =
-                samplerate::Samplerate::new(self.conv_type, rate, sample_rate, self.channels)?;
-            converters.entry(rate).or_insert(converter);
+            if rate != sample_rate {
+                let converter =
+                    samplerate::Samplerate::new(self.conv_type, rate, sample_rate, self.channels)?;
+                converters.entry(rate).or_insert(Some(converter));
+            } else {
+                converters.entry(rate).or_insert(None);
+            }
         }
 
         Ok(Mixer {
@@ -130,7 +134,7 @@ pub struct Mixer<I: Iterator<Item = Submission>> {
     submission_queue: I,
     channels: usize,
     sample_rate: u32,
-    converters: HashMap<u32, samplerate::Samplerate>,
+    converters: HashMap<u32, Option<samplerate::Samplerate>>,
 }
 
 impl<I: Iterator<Item = Submission>> Mixer<I> {
@@ -151,24 +155,33 @@ impl<I: Iterator<Item = Submission>> Iterator for Mixer<I> {
 
     fn next(&mut self) -> Option<Vec<f32>> {
         let submission = self.submission_queue.next()?;
+        let n_streams = submission.streams.len();
 
         // TODO report errors?
-        let resampled_streams = submission.streams.iter().filter_map(|(rate, stream)| {
-            let resampler = self.converters.get(rate)?;
-            resampler.process(stream).ok()
+        let mut resampled_streams = submission.streams.into_iter().filter_map(|(rate, stream)| {
+            let resampler = self.converters.get(&rate)?;
+
+            match resampler {
+                Some(r) => r.process(&stream).ok(),
+                None => Some(stream),
+            }
         });
 
-        let chunk_len = (self.sample_rate as f32 * submission.length) as usize * self.channels;
-        let mut chunk = vec![0f32; chunk_len];
+        if n_streams == 1 {
+            Some(resampled_streams.next().unwrap())
+        } else {
+            let chunk_len = (self.sample_rate as f32 * submission.length) as usize * self.channels;
+            let mut chunk = vec![0f32; chunk_len];
 
-        for stream in resampled_streams {
-            let mut stream_iter = stream.iter();
-            for v in chunk.iter_mut() {
-                *v += stream_iter.next().unwrap_or(&0f32);
+            for stream in resampled_streams {
+                let mut stream_iter = stream.iter();
+                for v in chunk.iter_mut() {
+                    *v += stream_iter.next().unwrap_or(&0f32);
+                }
             }
-        }
 
-        Some(chunk)
+            Some(chunk)
+        }
     }
 }
 
