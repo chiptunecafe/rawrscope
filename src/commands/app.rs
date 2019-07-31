@@ -2,6 +2,7 @@ use std::io;
 use std::panic::{set_hook, take_hook};
 
 use cpal::traits::{DeviceTrait, HostTrait};
+use glutin::{Event, WindowEvent};
 use snafu::{OptionExt, ResultExt, Snafu};
 
 use crate::audio::{connection::ConnectionTarget, mixer, playback};
@@ -17,6 +18,12 @@ enum Error {
 
     #[snafu(display("Failed to create master audio player: {}", source))]
     MasterCreation { source: playback::CreateError },
+
+    #[snafu(display("Failed to create main window: {}", source))]
+    ContextCreation { source: glutin::CreationError },
+
+    #[snafu(display("Falied to make GL context current: {}", source))]
+    ContextCurrent { source: glutin::ContextError },
 }
 
 fn load_state(state_file: Option<&str>) -> state::State {
@@ -118,6 +125,28 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     let audio_host = audio_host(&config);
     let audio_dev = audio_device(&config, &audio_host)?;
 
+    let mut event_loop = glutin::EventsLoop::new();
+
+    let hdpi_fac = event_loop.get_primary_monitor().get_hidpi_factor();
+    let window_size = (1280, 720);
+
+    let window_builder = glutin::WindowBuilder::new()
+        .with_title("rawrscope")
+        .with_dimensions(glutin::dpi::LogicalSize::from_physical(
+            window_size,
+            hdpi_fac,
+        ))
+        .with_resizable(false);
+    let context = glutin::ContextBuilder::new()
+        .with_vsync(true)
+        .build_windowed(window_builder, &event_loop)
+        .context(ContextCreation)?;
+
+    let context = unsafe { context.make_current() }
+        .map_err(|e| e.1)
+        .context(ContextCurrent)?;
+    gl::load_with(|name| context.get_proc_address(name) as *const _);
+
     let mut master = playback::Player::new(audio_host, audio_dev).context(MasterCreation)?;
 
     let mut mixer_config = mixer::MixerBuilder::new();
@@ -142,9 +171,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     let framerate = 60u16;
     let frame_secs = 1.0 / f32::from(framerate);
 
-    let window_ms = 50;
-
-    let frame_len = std::time::Duration::from_micros(1_000_000 / u64::from(framerate));
+    let window_ms = 200;
 
     let mut loaded_sources = state
         .audio_sources
@@ -154,65 +181,78 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
 
     let sub_builder = master.submission_builder();
     let mut frame = 0;
-    loop {
-        if loaded_sources
-            .iter()
-            .all(|source| frame > source.len() / (source.spec().sample_rate / u32::from(framerate)))
-        {
-            std::thread::sleep(frame_len);
-            continue;
+    let mut running = true;
+    while running {
+        event_loop.poll_events(|event| {
+            if let Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                ..
+            } = event
+            {
+                log::info!("Goodbye!");
+                running = false;
+            }
+        });
+
+        unsafe {
+            gl::ClearColor(1.0, 0.0, 1.0, 1.0);
+            gl::Clear(gl::COLOR_BUFFER_BIT);
         }
 
-        let st = std::time::Instant::now();
+        if loaded_sources
+            .iter()
+            .any(|source| frame < source.len() / (source.spec().sample_rate / u32::from(framerate)))
+        {
+            let mut sub = sub_builder.create(frame_secs);
 
-        let mut sub = sub_builder.create(frame_secs);
+            for source in &mut loaded_sources {
+                let channels = source.spec().channels;
+                let sample_rate = source.spec().sample_rate;
 
-        for source in &mut loaded_sources {
-            let channels = source.spec().channels;
-            let sample_rate = source.spec().sample_rate;
+                let window_len = sample_rate * window_ms / 1000 * u32::from(channels);
+                let window_pos = (sample_rate / u32::from(framerate)) * frame;
 
-            let window_len = sample_rate * window_ms / 1000 * u32::from(channels);
-            let window_pos = (sample_rate / u32::from(framerate)) * frame;
-
-            // TODO dont panic
-            let window = source
-                .chunk_at(window_pos, window_len as usize)
-                .unwrap()
-                .iter()
-                .copied()
-                .collect::<Vec<_>>();
-
-            let chunk_len = sub
-                .length_of_channel(sample_rate)
-                .expect("submission missing sample rate!")
-                * channels as usize;
-
-            let chunk = &window[0..chunk_len.min(window.len())];
-
-            for conn in source.connections {
-                let channel_iter = chunk
+                // TODO dont panic
+                let window = source
+                    .chunk_at(window_pos, window_len as usize)
+                    .unwrap()
                     .iter()
-                    .skip(conn.channel as usize)
-                    .step_by(channels as usize)
-                    .copied();
-                match conn.target {
-                    ConnectionTarget::Master => {
-                        sub.add(sample_rate, conn.target_channel as usize, channel_iter);
+                    .copied()
+                    .collect::<Vec<_>>();
+
+                let chunk_len = sub
+                    .length_of_channel(sample_rate)
+                    .expect("submission missing sample rate!")
+                    * channels as usize;
+
+                let chunk = &window[0..chunk_len.min(window.len())];
+
+                for conn in source.connections {
+                    let channel_iter = chunk
+                        .iter()
+                        .skip(conn.channel as usize)
+                        .step_by(channels as usize)
+                        .copied();
+                    match conn.target {
+                        ConnectionTarget::Master => {
+                            sub.add(sample_rate, conn.target_channel as usize, channel_iter);
+                        }
+                        _ => unimplemented!(),
                     }
-                    _ => unimplemented!(),
                 }
+            }
+
+            if let Err(e) = master.submit(sub) {
+                log::error!("Failed to submit audio to master: {}", e);
             }
         }
 
-        if let Err(e) = master.submit(sub) {
-            log::error!("Failed to submit audio to master: {}", e);
-        }
-
-        let elapsed = st.elapsed();
-        std::thread::sleep((frame_len - elapsed) / 2);
+        context.swap_buffers().unwrap();
 
         frame += 1;
     }
+
+    Ok(())
 }
 
 pub fn run(state_file: Option<&str>) {
