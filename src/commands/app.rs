@@ -3,6 +3,22 @@ use std::panic::{set_hook, take_hook};
 
 use cpal::traits::{DeviceTrait, HostTrait};
 use glutin::{Event, WindowEvent};
+use pathfinder_content::color::{ColorF, ColorU};
+use pathfinder_content::outline::{Contour, Outline};
+use pathfinder_content::stroke::{LineCap, LineJoin, OutlineStrokeToFill, StrokeStyle};
+use pathfinder_geometry::rect::RectF;
+use pathfinder_geometry::transform2d::Transform2F;
+use pathfinder_geometry::vector::{Vector2F, Vector2I};
+use pathfinder_gl::{GLDevice, GLVersion};
+use pathfinder_gpu::resources::FilesystemResourceLoader;
+use pathfinder_renderer::concurrent::{rayon::RayonExecutor, scene_proxy::SceneProxy};
+use pathfinder_renderer::gpu::{
+    options::{DestFramebuffer, RendererOptions},
+    renderer::Renderer,
+};
+use pathfinder_renderer::options::BuildOptions;
+use pathfinder_renderer::paint::Paint;
+use pathfinder_renderer::scene::{PathObject, Scene};
 use snafu::{OptionExt, ResultExt, Snafu};
 
 use crate::audio::{connection::ConnectionTarget, mixer, playback};
@@ -128,17 +144,19 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     let mut event_loop = glutin::EventsLoop::new();
 
     let hdpi_fac = event_loop.get_primary_monitor().get_hidpi_factor();
-    let window_size = (1280, 720);
+    let window_size = Vector2I::new(1920, 1080);
 
     let window_builder = glutin::WindowBuilder::new()
         .with_title("rawrscope")
         .with_dimensions(glutin::dpi::LogicalSize::from_physical(
-            window_size,
+            (window_size.x() as u32, window_size.y() as u32),
             hdpi_fac,
         ))
         .with_resizable(false);
     let context = glutin::ContextBuilder::new()
         .with_vsync(true)
+        .with_gl(glutin::GlRequest::Latest)
+        .with_gl_profile(glutin::GlProfile::Core)
         .build_windowed(window_builder, &event_loop)
         .context(ContextCreation)?;
 
@@ -146,6 +164,16 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
         .map_err(|e| e.1)
         .context(ContextCurrent)?;
     gl::load_with(|name| context.get_proc_address(name) as *const _);
+
+    let mut renderer = Renderer::new(
+        GLDevice::new(GLVersion::GL3, 0),
+        &FilesystemResourceLoader::locate(),
+        DestFramebuffer::full_window(window_size),
+        RendererOptions {
+            background_color: Some(ColorF::new(0.0, 0.0, 0.0, 1.0)),
+        },
+    );
+    let proxy = SceneProxy::new(RayonExecutor);
 
     let mut master = playback::Player::new(audio_host, audio_dev).context(MasterCreation)?;
 
@@ -171,7 +199,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     let framerate = 60u16;
     let frame_secs = 1.0 / f32::from(framerate);
 
-    let window_ms = 200;
+    let window_ms = 50;
 
     let mut loaded_sources = state
         .audio_sources
@@ -194,9 +222,54 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
             }
         });
 
-        unsafe {
-            gl::ClearColor(1.0, 0.0, 1.0, 1.0);
-            gl::Clear(gl::COLOR_BUFFER_BIT);
+        let time = std::time::Instant::now();
+
+        let mut scene = Scene::new();
+
+        scene.set_view_box(RectF::new(Vector2F::new(0.0, 0.0), window_size.to_f32()));
+
+        let midline_paint = scene.push_paint(&Paint {
+            color: ColorU {
+                r: 50,
+                g: 50,
+                b: 50,
+                a: 255,
+            },
+        });
+        let scope_paint = scene.push_paint(&Paint {
+            color: ColorU {
+                r: 255,
+                g: 255,
+                b: 255,
+                a: 255,
+            },
+        });
+
+        // draw midlines
+        for i in 0..loaded_sources.len() {
+            let h = window_size.y() / loaded_sources.len() as i32;
+            let y = h * i as i32 + h / 2;
+
+            let mut midline_outline = Outline::new();
+
+            let mut contour = Contour::new();
+            contour.push_endpoint(Vector2F::new(0.0, y as f32));
+            contour.push_endpoint(Vector2F::new(window_size.x() as f32, y as f32));
+            midline_outline.push_contour(contour);
+
+            let mut midline_stf = OutlineStrokeToFill::new(
+                &midline_outline,
+                StrokeStyle {
+                    line_width: 2.0,
+                    line_cap: Default::default(),
+                    line_join: Default::default(),
+                },
+            );
+            midline_stf.offset();
+            let midline_filled = midline_stf.into_outline();
+
+            let midline_path = PathObject::new(midline_filled, midline_paint, "midline".into());
+            scene.push_path(midline_path);
         }
 
         if loaded_sources
@@ -205,7 +278,8 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
         {
             let mut sub = sub_builder.create(frame_secs);
 
-            for source in &mut loaded_sources {
+            let n_sources = loaded_sources.len();
+            for (i, source) in loaded_sources.iter_mut().enumerate() {
                 let channels = source.spec().channels;
                 let sample_rate = source.spec().sample_rate;
 
@@ -219,6 +293,70 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                     .iter()
                     .copied()
                     .collect::<Vec<_>>();
+
+                /*
+                for chunk in window.chunks(5) {
+                    let mut scope_outline = Outline::new();
+                    let mut contour = Contour::new();
+
+                    let h = window_size.y() / n_sources as i32;
+                    let y = h * i as i32 + h / 2;
+
+                    for (j, v) in chunk.iter().enumerate().step_by(samples_per_pixel) {
+                        let x = j as f32 / window.len() as f32 * window_size.x() as f32;
+                        let y = y as f32 - v * h as f32;
+
+                        contour.push_endpoint(Vector2F::new(x, y));
+                    }
+
+                    scope_outline.push_contour(contour);
+                    let mut scope_stf = OutlineStrokeToFill::new(
+                        &scope_outline,
+                        StrokeStyle {
+                            line_width: 3.0,
+                            line_cap: Default::default(),
+                            line_join: LineJoin::Miter(0.0),
+                        },
+                    );
+                    scope_stf.offset();
+                    let scope_filled = scope_stf.into_outline();
+
+                    let scope_path = PathObject::new(scope_filled, scope_paint, "scope".into());
+                    scene.push_path(scope_path);
+                }
+                */
+
+                let h = window_size.y() / n_sources as i32;
+                let y = h * i as i32 + h / 2;
+                let block_len = 50;
+                for i in (0..window_size.x() as usize).step_by(block_len) {
+                    let mut outline = Outline::new();
+                    let mut contour = Contour::new();
+
+                    for j in i..=i + block_len {
+                        let idx =
+                            (j as f32 / window_size.x() as f32 * window.len() as f32) as usize;
+                        if let Some(v) = window.get(idx) {
+                            contour.push_endpoint(Vector2F::new(j as f32, y as f32 - v * h as f32));
+                        }
+                    }
+
+                    outline.push_contour(contour);
+
+                    let mut fill = OutlineStrokeToFill::new(
+                        &outline,
+                        StrokeStyle {
+                            line_width: 3.0,
+                            line_cap: LineCap::default(),
+                            line_join: LineJoin::Miter(0.0),
+                        },
+                    );
+                    fill.offset();
+                    let filled = fill.into_outline();
+
+                    let path = PathObject::new(filled, scope_paint, "scope".into());
+                    scene.push_path(path);
+                }
 
                 let chunk_len = sub
                     .length_of_channel(sample_rate)
@@ -246,6 +384,15 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                 log::error!("Failed to submit audio to master: {}", e);
             }
         }
+
+        proxy.replace_scene(scene);
+        proxy.build_and_render(
+            &mut renderer,
+            BuildOptions {
+                subpixel_aa_enabled: false,
+                ..Default::default()
+            },
+        );
 
         context.swap_buffers().unwrap();
 
