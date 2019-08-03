@@ -7,11 +7,10 @@ use pathfinder_content::color::{ColorF, ColorU};
 use pathfinder_content::outline::{Contour, Outline};
 use pathfinder_content::stroke::{LineCap, LineJoin, OutlineStrokeToFill, StrokeStyle};
 use pathfinder_geometry::rect::RectF;
-use pathfinder_geometry::transform2d::Transform2F;
 use pathfinder_geometry::vector::{Vector2F, Vector2I};
 use pathfinder_gl::{GLDevice, GLVersion};
 use pathfinder_gpu::resources::FilesystemResourceLoader;
-use pathfinder_renderer::concurrent::{rayon::RayonExecutor, scene_proxy::SceneProxy};
+use pathfinder_renderer::concurrent::{rayon::RayonExecutor as Executor, scene_proxy::SceneProxy};
 use pathfinder_renderer::gpu::{
     options::{DestFramebuffer, RendererOptions},
     renderer::Renderer,
@@ -173,7 +172,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
             background_color: Some(ColorF::new(0.0, 0.0, 0.0, 1.0)),
         },
     );
-    let proxy = SceneProxy::new(RayonExecutor);
+    let proxy = SceneProxy::new(Executor);
 
     let mut master = playback::Player::new(audio_host, audio_dev).context(MasterCreation)?;
 
@@ -294,50 +293,19 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                     .copied()
                     .collect::<Vec<_>>();
 
-                /*
-                for chunk in window.chunks(5) {
-                    let mut scope_outline = Outline::new();
-                    let mut contour = Contour::new();
-
-                    let h = window_size.y() / n_sources as i32;
-                    let y = h * i as i32 + h / 2;
-
-                    for (j, v) in chunk.iter().enumerate().step_by(samples_per_pixel) {
-                        let x = j as f32 / window.len() as f32 * window_size.x() as f32;
-                        let y = y as f32 - v * h as f32;
-
-                        contour.push_endpoint(Vector2F::new(x, y));
-                    }
-
-                    scope_outline.push_contour(contour);
-                    let mut scope_stf = OutlineStrokeToFill::new(
-                        &scope_outline,
-                        StrokeStyle {
-                            line_width: 3.0,
-                            line_cap: Default::default(),
-                            line_join: LineJoin::Miter(0.0),
-                        },
-                    );
-                    scope_stf.offset();
-                    let scope_filled = scope_stf.into_outline();
-
-                    let scope_path = PathObject::new(scope_filled, scope_paint, "scope".into());
-                    scene.push_path(scope_path);
-                }
-                */
-
                 let h = window_size.y() / n_sources as i32;
                 let y = h * i as i32 + h / 2;
-                let block_len = 50;
-                for i in (0..window_size.x() as usize).step_by(block_len) {
+                let block_len = 32;
+                for i in (0..window.len()).step_by(block_len) {
                     let mut outline = Outline::new();
                     let mut contour = Contour::new();
 
                     for j in i..=i + block_len {
-                        let idx =
-                            (j as f32 / window_size.x() as f32 * window.len() as f32) as usize;
-                        if let Some(v) = window.get(idx) {
-                            contour.push_endpoint(Vector2F::new(j as f32, y as f32 - v * h as f32));
+                        if let Some(v) = window.get(j) {
+                            contour.push_endpoint(Vector2F::new(
+                                j as f32 / window.len() as f32 * window_size.x() as f32,
+                                y as f32 - v * h as f32,
+                            ));
                         }
                     }
 
@@ -346,9 +314,9 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                     let mut fill = OutlineStrokeToFill::new(
                         &outline,
                         StrokeStyle {
-                            line_width: 3.0,
-                            line_cap: LineCap::default(),
-                            line_join: LineJoin::Miter(0.0),
+                            line_width: 2.5,
+                            line_cap: LineCap::Round,
+                            line_join: LineJoin::Bevel,
                         },
                     );
                     fill.offset();
@@ -393,6 +361,8 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                 ..Default::default()
             },
         );
+
+        dbg!(time.elapsed());
 
         context.swap_buffers().unwrap();
 
