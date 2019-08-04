@@ -24,6 +24,12 @@ enum Error {
 
     #[snafu(display("Falied to make GL context current: {}", source))]
     ContextCurrent { source: glutin::ContextError },
+
+    #[snafu(display("Failed to set up blend2d rendering: {}", source))]
+    RenderInitialize { source: blend2d::error::Error },
+
+    #[snafu(display("Failed to render oscilloscope: {}", source))]
+    Render { source: blend2d::error::Error },
 }
 
 fn load_state(state_file: Option<&str>) -> state::State {
@@ -127,12 +133,13 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
 
     let mut event_loop = glutin::EventsLoop::new();
 
+    let window_size = (1920, 1080);
     let hdpi_fac = event_loop.get_primary_monitor().get_hidpi_factor();
 
     let window_builder = glutin::WindowBuilder::new()
         .with_title("rawrscope")
         .with_dimensions(glutin::dpi::LogicalSize::from_physical(
-            (1920, 1080),
+            window_size,
             hdpi_fac,
         ))
         .with_resizable(false);
@@ -147,6 +154,14 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
         .map_err(|e| e.1)
         .context(ContextCurrent)?;
     gl::load_with(|name| context.get_proc_address(name) as *const _);
+
+    let mut image = blend2d::image::Image::new(
+        window_size.0 as i32,
+        window_size.1 as i32,
+        blend2d::image::ImageFormat::PRgb32,
+    )
+    .context(RenderInitialize)?;
+    let mut blend_ctx = blend2d::context::Context::new(&mut image).context(RenderInitialize)?;
 
     let mut master = playback::Player::new(audio_host, audio_dev).context(MasterCreation)?;
 
@@ -197,13 +212,32 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
 
         let time = std::time::Instant::now();
 
+        blend_ctx.clear_all().context(Render)?;
+
+        // draw midlines
+        blend_ctx.set_stroke_width(2.0);
+        blend_ctx.set_stroke_style_rgba32(0x28_28_28_FF);
+        for i in 0..loaded_sources.len() {
+            let h = window_size.1 / loaded_sources.len() as u32;
+            let y = h * i as u32 + h / 2;
+
+            // TODO reduce numerical casts
+            blend_ctx
+                .stroke_line(0.0, f64::from(y), f64::from(window_size.0), f64::from(y))
+                .context(Render)?;
+        }
+
         if loaded_sources
             .iter()
             .any(|source| frame < source.len() / (source.spec().sample_rate / u32::from(framerate)))
         {
             let mut sub = sub_builder.create(frame_secs);
 
-            for source in loaded_sources.iter_mut() {
+            blend_ctx.set_stroke_width(2.5);
+            blend_ctx.set_stroke_style_rgba32(0xFF_FF_FF_FF);
+
+            let n_sources = loaded_sources.len();
+            for (i, source) in loaded_sources.iter_mut().enumerate() {
                 let channels = source.spec().channels;
                 let sample_rate = source.spec().sample_rate;
 
@@ -217,6 +251,20 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                     .iter()
                     .copied()
                     .collect::<Vec<_>>();
+
+                let h = window_size.1 / n_sources as u32;
+                let y = h * i as u32 + h / 2;
+
+                let mut path = blend2d::path::Path::with_capacity(window.len());
+                path.move_to(0.0, f64::from(y) - f64::from(window[0]));
+                for (j, v) in window[1..].iter().enumerate() {
+                    path.line_to(
+                        j as f64 / window.len() as f64 * f64::from(window_size.0),
+                        f64::from(y) - f64::from(*v),
+                    );
+                }
+
+                blend_ctx.stroke_path(&path).context(Render)?;
 
                 let chunk_len = sub
                     .length_of_channel(sample_rate)
