@@ -182,6 +182,29 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
 
     let mut line_buffers: HashMap<usize, glium::VertexBuffer<LineVertex>> = HashMap::new();
 
+    let shader_prog = program!(&display, 330 => {
+        vertex: r#"
+#version 330
+
+in vec2 position;
+
+void main() {
+    // TODO transform matrix
+    gl_Position = vec4(position * vec2(0.001, 1.0), 0.0, 1.0);
+}
+        "#,
+        fragment: r#"
+#version 330
+
+out vec4 f_color;
+
+void main() {
+    f_color = vec4(1);
+}
+        "#,
+    })
+    .context(ShaderCompilation)?;
+
     let mut master = playback::Player::new(audio_host, audio_dev).context(MasterCreation)?;
 
     let mut mixer_config = mixer::MixerBuilder::new();
@@ -298,6 +321,18 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                             .as_slice(),
                     );
                 }
+
+                target
+                    .draw(
+                        &*buffer,
+                        glium::index::IndicesSource::NoIndices {
+                            primitives: glium::index::PrimitiveType::LineStrip,
+                        },
+                        &shader_prog,
+                        &glium::uniforms::EmptyUniforms,
+                        &Default::default(),
+                    )
+                    .context(GlRender)?;
 
                 let chunk_len = sub
                     .length_of_channel(sample_rate)
