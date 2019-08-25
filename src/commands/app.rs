@@ -27,12 +27,6 @@ enum Error {
         source: glium::backend::glutin::DisplayCreationError,
     },
 
-    #[snafu(display("Failed to set up blend2d rendering: {}", source))]
-    RenderInitialize { source: blend2d::error::Error },
-
-    #[snafu(display("Failed to render oscilloscope: {}", source))]
-    Render { source: blend2d::error::Error },
-
     #[snafu(display("Failed to swap buffers: {}", source))]
     SwapBuffers { source: glium::SwapBuffersError },
 
@@ -179,88 +173,6 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     let display = glium::Display::new(window_builder, context_builder, &event_loop)
         .context(ContextCreation)?;
 
-    let mut image = blend2d::image::Image::new(
-        window_size.0 as i32,
-        window_size.1 as i32,
-        blend2d::image::ImageFormat::PRgb32,
-    )
-    .context(RenderInitialize)?;
-    let mut blend_ctx = blend2d::context::Context::new(&mut image).context(RenderInitialize)?;
-
-    let image_data = image.data();
-    let gl_image = glium::texture::RawImage2d::from_raw_rgba(
-        image_data.data.to_vec(),
-        (image_data.size.0 as u32, image_data.size.1 as u32),
-    );
-    let tex = glium::texture::SrgbTexture2d::new(&display, gl_image).context(Texture)?;
-
-    let vertex_buffer = {
-        #[derive(Copy, Clone)]
-        struct Vertex {
-            position: [f32; 2],
-            tex_coords: [f32; 2],
-        }
-
-        glium::implement_vertex!(Vertex, position, tex_coords);
-
-        glium::VertexBuffer::new(
-            &display,
-            &[
-                Vertex {
-                    position: [-1.0, -1.0],
-                    tex_coords: [0.0, 1.0],
-                },
-                Vertex {
-                    position: [-1.0, 1.0],
-                    tex_coords: [0.0, 0.0],
-                },
-                Vertex {
-                    position: [1.0, 1.0],
-                    tex_coords: [1.0, 0.0],
-                },
-                Vertex {
-                    position: [1.0, -1.0],
-                    tex_coords: [1.0, 1.0],
-                },
-            ],
-        )
-        .context(VertexBuffer)
-    }?;
-    let index_buffer = glium::IndexBuffer::new(
-        &display,
-        glium::index::PrimitiveType::TriangleStrip,
-        &[1u16, 2, 0, 3],
-    )
-    .context(IndexBuffer)?;
-
-    let shader_prog = program!(&display, 330 => {
-        vertex: r#"
-#version 330
-
-in vec2 position;
-in vec2 tex_coords;
-
-out vec2 v_tex_coords;
-
-void main() {
-    gl_Position = vec4(position, 0.0, 1.0);
-    v_tex_coords = tex_coords;
-}
-        "#,
-        fragment: r#"
-#version 330
-
-uniform sampler2D tex;
-in vec2 v_tex_coords;
-out vec4 f_color;
-
-void main() {
-    f_color = texture(tex, v_tex_coords);
-}
-        "#,
-    })
-    .context(ShaderCompilation)?;
-
     let mut master = playback::Player::new(audio_host, audio_dev).context(MasterCreation)?;
 
     let mut mixer_config = mixer::MixerBuilder::new();
@@ -313,30 +225,11 @@ void main() {
         let mut target = display.draw();
         target.clear_color(0.0, 0.0, 0.0, 1.0);
 
-        blend_ctx.clear_all().context(Render)?;
-
-        // draw midlines
-        blend_ctx.set_stroke_width(2.0);
-        blend_ctx.set_stroke_style_rgba32(0xFF_28_28_28);
-        for i in 0..loaded_sources.len() {
-            let h = window_size.1 / loaded_sources.len() as u32;
-            let y = h * i as u32 + h / 2;
-
-            // TODO reduce numerical casts
-            blend_ctx
-                .stroke_line(0.0, f64::from(y), f64::from(window_size.0), f64::from(y))
-                .context(Render)?;
-        }
-
         if loaded_sources
             .iter()
             .any(|source| frame < source.len() / (source.spec().sample_rate / u32::from(framerate)))
         {
             let mut sub = sub_builder.create(frame_secs);
-
-            blend_ctx.set_stroke_width(2.5);
-            blend_ctx.set_stroke_style_rgba32(0xFF_FF_FF_FF);
-            blend_ctx.set_stroke_join(blend2d::path::StrokeJoin::Bevel);
 
             let n_sources = loaded_sources.len();
             for (i, source) in loaded_sources.iter_mut().enumerate() {
@@ -353,20 +246,6 @@ void main() {
                     .iter()
                     .copied()
                     .collect::<Vec<_>>();
-
-                let h = window_size.1 / n_sources as u32;
-                let y = h * i as u32 + h / 2;
-
-                let mut path = blend2d::path::Path::with_capacity(window.len());
-                path.move_to(0.0, f64::from(y) - f64::from(window[0]));
-                for (j, v) in window[1..].iter().enumerate() {
-                    path.line_to(
-                        j as f64 / window.len() as f64 * f64::from(window_size.0),
-                        f64::from(y) - f64::from(*v) * f64::from(h),
-                    );
-                }
-
-                blend_ctx.stroke_path(&path).context(Render)?;
 
                 let chunk_len = sub
                     .length_of_channel(sample_rate)
@@ -394,34 +273,6 @@ void main() {
                 log::error!("Failed to submit audio to master: {}", e);
             }
         }
-
-        let image_data = image.data();
-        let image = glium::texture::RawImage2d::from_raw_rgba(
-            image_data.data.to_vec(),
-            (image_data.size.0 as u32, image_data.size.1 as u32),
-        );
-        tex.write(
-            glium::Rect {
-                left: 0,
-                bottom: 0,
-                width: window_size.0,
-                height: window_size.1,
-            },
-            image,
-        );
-
-        let uniform = glium::uniform! {
-            tex: &tex,
-        };
-        target
-            .draw(
-                &vertex_buffer,
-                &index_buffer,
-                &shader_prog,
-                &uniform,
-                &Default::default(),
-            )
-            .context(GlRender)?;
 
         dbg!(time.elapsed());
 

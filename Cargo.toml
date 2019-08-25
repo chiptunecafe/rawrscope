@@ -6,7 +6,6 @@ edition = "2018"
 license = "GPL-3.0-or-later"
 
 [dependencies]
-blend2d = "0.3.0"
 clap = "2.33.0"
 cpal = "0.10.0"
 crossbeam-channel = "0.3.8"
