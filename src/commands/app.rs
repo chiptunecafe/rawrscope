@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io;
 use std::panic::{set_hook, take_hook};
 
@@ -173,6 +174,14 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     let display = glium::Display::new(window_builder, context_builder, &event_loop)
         .context(ContextCreation)?;
 
+    #[derive(Copy, Clone)]
+    struct LineVertex {
+        position: [f32; 2],
+    };
+    glium::implement_vertex!(LineVertex, position);
+
+    let mut line_buffers: HashMap<usize, glium::VertexBuffer<LineVertex>> = HashMap::new();
+
     let mut master = playback::Player::new(audio_host, audio_dev).context(MasterCreation)?;
 
     let mut mixer_config = mixer::MixerBuilder::new();
@@ -246,6 +255,49 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                     .iter()
                     .copied()
                     .collect::<Vec<_>>();
+
+                let buffer = line_buffers.entry(i).or_insert_with(|| {
+                    log::debug!("Creating line buffer #{}", i);
+                    glium::VertexBuffer::dynamic(
+                        &display,
+                        window
+                            .iter()
+                            .enumerate()
+                            .map(|(i, v)| LineVertex {
+                                position: [i as f32, *v],
+                            })
+                            .collect::<Vec<_>>()
+                            .as_slice(),
+                    )
+                    .unwrap() // TODO remove somehow
+                });
+
+                if buffer.len() != window.len() {
+                    log::debug!("Resizing line buffer #{}", i);
+                    *buffer = glium::VertexBuffer::dynamic(
+                        &display,
+                        window
+                            .iter()
+                            .enumerate()
+                            .map(|(i, v)| LineVertex {
+                                position: [i as f32, *v],
+                            })
+                            .collect::<Vec<_>>()
+                            .as_slice(),
+                    )
+                    .context(VertexBuffer)?;
+                } else {
+                    buffer.write(
+                        window
+                            .iter()
+                            .enumerate()
+                            .map(|(i, v)| LineVertex {
+                                position: [i as f32, *v],
+                            })
+                            .collect::<Vec<_>>()
+                            .as_slice(),
+                    );
+                }
 
                 let chunk_len = sub
                     .length_of_channel(sample_rate)
