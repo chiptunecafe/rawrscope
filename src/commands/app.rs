@@ -194,6 +194,43 @@ void main() {
     gl_Position = vec4(transform * vec3(position, 1.0), 1.0);
 }
         "#,
+        geometry: r#"
+#version 330
+
+layout(lines) in;
+layout(triangle_strip, max_vertices = 4) out;
+
+uniform vec2 resolution;
+uniform float thickness;
+
+void main() {
+    // (half thickness?)
+    vec2 thickness_norm = vec2(thickness) / resolution;
+
+    vec2 a = gl_in[0].gl_Position.xy;
+    vec2 b = gl_in[1].gl_Position.xy;
+
+    vec2 m = normalize(b - a);
+    vec2 n = vec2(-m.y, m.x);
+
+    // extend endcaps
+    a -= thickness_norm * m;
+    b += thickness_norm * m;
+
+    // write quad verts
+    gl_Position = vec4(a + n * thickness_norm, 0.0, 1.0);
+    EmitVertex();
+
+    gl_Position = vec4(a - n * thickness_norm, 0.0, 1.0);
+    EmitVertex();
+
+    gl_Position = vec4(b - n * thickness_norm, 0.0, 1.0);
+    EmitVertex();
+
+    gl_Position = vec4(b + n * thickness_norm, 0.0, 1.0);
+    EmitVertex();
+}
+        "#,
         fragment: r#"
 #version 330
 
