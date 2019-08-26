@@ -372,7 +372,11 @@ void main() {
                         &*buffer,
                         glium::index::NoIndices(glium::index::PrimitiveType::LineStrip),
                         &shader_prog,
-                        &uniform! { transform: <_ as Into<[[f32; 3]; 3]>>::into(transform) },
+                        &uniform! {
+                            transform: <_ as Into<[[f32; 3]; 3]>>::into(transform),
+                            resolution: [window_size.0 as f32, window_size.1 as f32],
+                            thickness: 2.5f32,
+                        },
                         &Default::default(),
                     )
                     .context(GlRender)?;
