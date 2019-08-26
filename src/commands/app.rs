@@ -333,18 +333,28 @@ void main() {
                 let window_pos = (sample_rate / u32::from(framerate)) * frame;
 
                 // TODO dont panic
-                let window = source
+                let mut window = source
                     .chunk_at(window_pos, window_len as usize)
                     .unwrap()
                     .iter()
                     .copied()
                     .collect::<Vec<_>>();
 
+                // lazy zero crossing centering
+                let mut zc_range = window.len() / 2..window.len() - 1;
+                for i in &mut zc_range {
+                    if window[i] < 0.0 && window[i + 1] >= 0.0 {
+                        break;
+                    }
+                }
+                let zc = zc_range.start - window.len() / 2;
+                window.extend(source.next_chunk(zc).unwrap()); // TODO dont panic
+
                 let buffer = line_buffers.entry(i).or_insert_with(|| {
                     log::debug!("Creating line buffer #{}", i);
                     glium::VertexBuffer::dynamic(
                         &display,
-                        window
+                        window[zc..]
                             .iter()
                             .enumerate()
                             .map(|(i, v)| LineVertex {
@@ -356,11 +366,11 @@ void main() {
                     .unwrap() // TODO remove somehow
                 });
 
-                if buffer.len() != window.len() {
+                if buffer.len() != window_len as usize {
                     log::debug!("Resizing line buffer #{}", i);
                     *buffer = glium::VertexBuffer::dynamic(
                         &display,
-                        window
+                        window[zc..]
                             .iter()
                             .enumerate()
                             .map(|(i, v)| LineVertex {
@@ -372,7 +382,7 @@ void main() {
                     .context(VertexBuffer)?;
                 } else {
                     buffer.write(
-                        window
+                        window[zc..]
                             .iter()
                             .enumerate()
                             .map(|(i, v)| LineVertex {
