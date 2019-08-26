@@ -7,6 +7,7 @@ use glium::{
     glutin::{self, Event, WindowEvent},
     program, uniform, Surface,
 };
+use nalgebra as na;
 use snafu::{OptionExt, ResultExt, Snafu};
 
 use crate::audio::{connection::ConnectionTarget, mixer, playback};
@@ -187,10 +188,10 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
 #version 330
 
 in vec2 position;
+uniform mat3 transform;
 
 void main() {
-    // TODO transform matrix
-    gl_Position = vec4(position * vec2(0.001, 1.0), 0.0, 1.0);
+    gl_Position = vec4(transform * vec3(position, 1.0), 1.0);
 }
         "#,
         fragment: r#"
@@ -322,14 +323,19 @@ void main() {
                     );
                 }
 
+                let y_shift = (i as f32 + 0.5) / (n_sources as f32) * 2.0 - 1.0;
+
+                let transform: na::Matrix3<f32> = na::Matrix3::new_nonuniform_scaling(
+                    &na::Vector2::new(1.0 / window_len as f32 * 2.0, 1.0 / n_sources as f32 * 2.0),
+                )
+                .append_translation(&na::Vector2::new(-1.0, -y_shift));
+
                 target
                     .draw(
                         &*buffer,
-                        glium::index::IndicesSource::NoIndices {
-                            primitives: glium::index::PrimitiveType::LineStrip,
-                        },
+                        glium::index::NoIndices(glium::index::PrimitiveType::LineStrip),
                         &shader_prog,
-                        &glium::uniforms::EmptyUniforms,
+                        &uniform! { transform: <_ as Into<[[f32; 3]; 3]>>::into(transform) },
                         &Default::default(),
                     )
                     .context(GlRender)?;
