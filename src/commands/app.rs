@@ -187,8 +187,9 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
         vertex: r#"
 #version 330
 
-in vec2 position;
 uniform mat3 transform;
+
+in vec2 position;
 
 void main() {
     gl_Position = vec4(transform * vec3(position, 1.0), 1.0);
@@ -197,14 +198,19 @@ void main() {
         geometry: r#"
 #version 330
 
-layout(lines) in;
-layout(triangle_strip, max_vertices = 4) out;
-
 uniform vec2 resolution;
 uniform float thickness;
 
+layout(lines) in;
+layout(triangle_strip, max_vertices = 4) out;
+
+out vec4 endpoints;
+
 void main() {
-    // (half thickness?)
+    // feather distance for aa
+    float thickness = thickness + 1.0;
+
+    // (half thickness i think)
     vec2 thickness_norm = vec2(thickness) / resolution;
 
     vec2 a = gl_in[0].gl_Position.xy;
@@ -212,6 +218,8 @@ void main() {
 
     vec2 m = normalize(b - a);
     vec2 n = vec2(-m.y, m.x);
+
+    endpoints = vec4((a * 0.5 + 0.5) * resolution, (b * 0.5 + 0.5) * resolution);
 
     // extend endcaps
     a -= thickness_norm * m;
@@ -224,20 +232,35 @@ void main() {
     gl_Position = vec4(a - n * thickness_norm, 0.0, 1.0);
     EmitVertex();
 
-    gl_Position = vec4(b - n * thickness_norm, 0.0, 1.0);
+    gl_Position = vec4(b + n * thickness_norm, 0.0, 1.0);
     EmitVertex();
 
-    gl_Position = vec4(b + n * thickness_norm, 0.0, 1.0);
+    gl_Position = vec4(b - n * thickness_norm, 0.0, 1.0);
     EmitVertex();
 }
         "#,
         fragment: r#"
 #version 330
 
+uniform vec2 resolution;
+uniform float thickness;
+
+in vec4 endpoints;
 out vec4 f_color;
 
+float segment_distance(vec2 v, vec2 w, vec2 p) {
+    float l2 = length(w - v);
+    l2 *= l2;
+    float t = clamp(dot(p - v, w - v) / l2, 0.0, 1.0);
+    vec2 projection = v + t * (w - v);
+    return distance(p, projection);
+}
+
 void main() {
-    f_color = vec4(1);
+    float dist = segment_distance(endpoints.xy, endpoints.zw, gl_FragCoord.xy);
+    dist -= thickness / 2.0;
+
+    f_color = vec4(vec3(1), clamp(0.5 - dist, 0.0, 1.0));
 }
         "#,
     })
@@ -377,7 +400,10 @@ void main() {
                             resolution: [window_size.0 as f32, window_size.1 as f32],
                             thickness: 2.5f32,
                         },
-                        &Default::default(),
+                        &glium::DrawParameters {
+                            blend: glium::Blend::alpha_blending(),
+                            ..Default::default()
+                        },
                     )
                     .context(GlRender)?;
 
