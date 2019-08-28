@@ -32,7 +32,7 @@ enum Error {
     #[snafu(display("Failed to swap buffers: {}", source))]
     SwapBuffers { source: glium::SwapBuffersError },
 
-    #[snafu(display("Failed to update scope texture: {}", source))]
+    #[snafu(display("Failed to create intermediate texture: {}", source))]
     Texture {
         source: glium::texture::TextureCreationError,
     },
@@ -182,6 +182,24 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     glium::implement_vertex!(LineVertex, position);
 
     let mut line_buffers: HashMap<usize, glium::VertexBuffer<LineVertex>> = HashMap::new();
+    let quad = glium::VertexBuffer::new(
+        &display,
+        &[
+            LineVertex {
+                position: [-1.0, 1.0],
+            },
+            LineVertex {
+                position: [-1.0, -1.0],
+            },
+            LineVertex {
+                position: [1.0, 1.0],
+            },
+            LineVertex {
+                position: [1.0, -1.0],
+            },
+        ],
+    )
+    .context(VertexBuffer)?;
 
     let shader_prog = program!(&display, 330 => {
         vertex: r#"
@@ -266,6 +284,36 @@ void main() {
     })
     .context(ShaderCompilation)?;
 
+    let quad_shader = program!(&display, 330 => {
+        vertex: r#"
+#version 330
+
+in vec2 position;
+out vec2 v_tex_coord;
+
+void main() {
+    gl_Position = vec4(position, 0.0, 1.0);
+    v_tex_coord = position * 0.5 + 0.5;
+}
+        "#,
+        fragment: r#"
+#version 330
+
+uniform sampler2D tex;
+
+in vec2 v_tex_coord;
+out vec4 f_color;
+
+void main() {
+    f_color = texture(tex, v_tex_coord);
+}
+        "#,
+    })
+    .context(ShaderCompilation)?;
+
+    let line_tex =
+        glium::Texture2d::empty(&display, window_size.0, window_size.1).context(Texture)?;
+
     let mut master = playback::Player::new(audio_host, audio_dev).context(MasterCreation)?;
 
     let mut mixer_config = mixer::MixerBuilder::new();
@@ -317,6 +365,11 @@ void main() {
 
         let mut target = display.draw();
         target.clear_color(0.0, 0.0, 0.0, 1.0);
+
+        {
+            let mut line_target = line_tex.as_surface();
+            line_target.clear_color(0.0, 0.0, 0.0, 0.0);
+        }
 
         if loaded_sources
             .iter()
@@ -400,16 +453,36 @@ void main() {
                 )
                 .append_translation(&na::Vector2::new(-1.0, -y_shift));
 
+                {
+                    let mut line_target = line_tex.as_surface();
+                    line_target
+                        .draw(
+                            &*buffer,
+                            glium::index::NoIndices(glium::index::PrimitiveType::LineStrip),
+                            &shader_prog,
+                            &uniform! {
+                                transform: <_ as Into<[[f32; 3]; 3]>>::into(transform),
+                                resolution: [window_size.0 as f32, window_size.1 as f32],
+                                thickness: 1f32,
+                            },
+                            &glium::DrawParameters {
+                                blend: glium::Blend {
+                                    color: glium::BlendingFunction::AlwaysReplace,
+                                    alpha: glium::BlendingFunction::Max,
+                                    constant_value: (0.0, 0.0, 0.0, 0.0),
+                                },
+                                ..Default::default()
+                            },
+                        )
+                        .context(GlRender)?;
+                }
+
                 target
                     .draw(
-                        &*buffer,
-                        glium::index::NoIndices(glium::index::PrimitiveType::LineStrip),
-                        &shader_prog,
-                        &uniform! {
-                            transform: <_ as Into<[[f32; 3]; 3]>>::into(transform),
-                            resolution: [window_size.0 as f32, window_size.1 as f32],
-                            thickness: 2.5f32,
-                        },
+                        &quad,
+                        glium::index::NoIndices(glium::index::PrimitiveType::TriangleStrip),
+                        &quad_shader,
+                        &uniform! { tex: &line_tex },
                         &glium::DrawParameters {
                             blend: glium::Blend::alpha_blending(),
                             ..Default::default()
