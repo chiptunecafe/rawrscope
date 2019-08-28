@@ -5,28 +5,13 @@ oscilloscope visualizations of audio, typically chiptune.
 
 *TODO preview screenshot*
 
-## Important Note on macOS Support
-
-**Currently, bugs specific to macOS likely will not be resolved!** As of macOS
-10.14, OpenGL, the graphics API that rawrscope currently uses, has been
-deprecated in favor of Apple's Metal API. Although Pathfinder, the 2D rendering
-engine rawrscope uses, has a Metal backend, I would rather not have to
-explicitly support it. Instead, I am waiting on Pathfinder to implement a
-[`gfx-hal`](https://github.com/gfx-rs/gfx) backend that will allow rawrscope to
-target all of the major graphics APIs.
-
-More on Pathfinder `gfx-hal` support:
-* [PR for new Pathfinder GPU API](https://github.com/servo/pathfinder/pull/213)
-* [bzm3r's WIP fork](https://github.com/bzm3r/pathfinder/tree/pf3-gfx-hal/)
-
 ## Features
 
 \* = unimplemented
 
 * \*Intuitive interface
 * \*Realtime editor and preview
-* \*Fast and high quality 2D rendering using the
-  [Pathfinder](https://github.com/servo/pathfinder) rasterizer
+* Fast, antialiased line rendering
 * Many centering algorithms
   * \*Peak Speed
   * \*Fundamental Phase
