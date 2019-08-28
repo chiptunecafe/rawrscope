@@ -366,10 +366,8 @@ void main() {
         let mut target = display.draw();
         target.clear_color(0.0, 0.0, 0.0, 1.0);
 
-        {
-            let mut line_target = line_tex.as_surface();
-            line_target.clear_color(0.0, 0.0, 0.0, 0.0);
-        }
+        let mut line_target = line_tex.as_surface();
+        line_target.clear_color(0.0, 0.0, 0.0, 0.0);
 
         if loaded_sources
             .iter()
@@ -453,38 +451,22 @@ void main() {
                 )
                 .append_translation(&na::Vector2::new(-1.0, -y_shift));
 
-                {
-                    let mut line_target = line_tex.as_surface();
-                    line_target
-                        .draw(
-                            &*buffer,
-                            glium::index::NoIndices(glium::index::PrimitiveType::LineStrip),
-                            &shader_prog,
-                            &uniform! {
-                                transform: <_ as Into<[[f32; 3]; 3]>>::into(transform),
-                                resolution: [window_size.0 as f32, window_size.1 as f32],
-                                thickness: 1f32,
-                            },
-                            &glium::DrawParameters {
-                                blend: glium::Blend {
-                                    color: glium::BlendingFunction::AlwaysReplace,
-                                    alpha: glium::BlendingFunction::Max,
-                                    constant_value: (0.0, 0.0, 0.0, 0.0),
-                                },
-                                ..Default::default()
-                            },
-                        )
-                        .context(GlRender)?;
-                }
-
-                target
+                line_target
                     .draw(
-                        &quad,
-                        glium::index::NoIndices(glium::index::PrimitiveType::TriangleStrip),
-                        &quad_shader,
-                        &uniform! { tex: &line_tex },
+                        &*buffer,
+                        glium::index::NoIndices(glium::index::PrimitiveType::LineStrip),
+                        &shader_prog,
+                        &uniform! {
+                            transform: <_ as Into<[[f32; 3]; 3]>>::into(transform),
+                            resolution: [window_size.0 as f32, window_size.1 as f32],
+                            thickness: 1f32,
+                        },
                         &glium::DrawParameters {
-                            blend: glium::Blend::alpha_blending(),
+                            blend: glium::Blend {
+                                color: glium::BlendingFunction::AlwaysReplace,
+                                alpha: glium::BlendingFunction::Max,
+                                constant_value: (0.0, 0.0, 0.0, 0.0),
+                            },
                             ..Default::default()
                         },
                     )
@@ -516,6 +498,19 @@ void main() {
                 log::error!("Failed to submit audio to master: {}", e);
             }
         }
+
+        target
+            .draw(
+                &quad,
+                glium::index::NoIndices(glium::index::PrimitiveType::TriangleStrip),
+                &quad_shader,
+                &uniform! { tex: &line_tex },
+                &glium::DrawParameters {
+                    blend: glium::Blend::alpha_blending(),
+                    ..Default::default()
+                },
+            )
+            .context(GlRender)?;
 
         dbg!(time.elapsed());
 
