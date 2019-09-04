@@ -34,7 +34,6 @@ pub struct AudioSource {
     pub path: PathBuf,
     pub fade_in: Option<f32>,
     pub fade_out: Option<f32>,
-    pub gain: f32,
     pub connections: Vec<audio::connection::Connection>,
 
     #[serde(skip)]
@@ -70,7 +69,6 @@ impl AudioSource {
                 path: self.path.as_path(),
                 fade_in: self.fade_in,
                 fade_out: self.fade_out,
-                gain: self.gain,
                 connections: self.connections.as_slice(),
                 wav_reader,
             })
@@ -84,7 +82,6 @@ pub struct AsLoaded<'a> {
     path: &'a Path,
     pub fade_in: Option<f32>,
     pub fade_out: Option<f32>,
-    pub gain: f32,
     pub connections: &'a [audio::connection::Connection],
     wav_reader: &'a mut hound::WavReader<io::BufReader<fs::File>>,
 }
