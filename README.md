@@ -16,7 +16,7 @@ oscilloscope visualizations of audio, typically chiptune.
   * \*Crosscorrelation
   * \*External Trigger
 * \*High-quality trigger generator for external trigger mode
-* \*Audio manipulation tools (trim, fade in/out, gain)
+* Audio manipulation tools (\*trim, fade in/out)
 * \*Node-based audio routing interface
   * Automatic master audio generation
   * Stereo upmixing/downmixing
