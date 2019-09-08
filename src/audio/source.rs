@@ -38,6 +38,8 @@ pub struct AudioSource {
 
     #[serde(skip)]
     pub wav_reader: Option<hound::WavReader<io::BufReader<fs::File>>>,
+    #[serde(skip)]
+    reader_position: u32,
 }
 
 impl AudioSource {
@@ -71,6 +73,7 @@ impl AudioSource {
                 fade_out: self.fade_out,
                 connections: self.connections.as_slice(),
                 wav_reader,
+                reader_position: &mut self.reader_position,
             })
         } else {
             None
@@ -84,6 +87,7 @@ pub struct AsLoaded<'a> {
     pub fade_out: Option<f32>,
     pub connections: &'a [audio::connection::Connection],
     wav_reader: &'a mut hound::WavReader<io::BufReader<fs::File>>,
+    reader_position: &'a mut u32,
 }
 
 impl<'a> AsLoaded<'a> {
@@ -101,18 +105,59 @@ impl<'a> AsLoaded<'a> {
 
     pub fn chunk_at(&mut self, pos: u32, len: usize) -> Result<Vec<f32>, ReadError> {
         self.wav_reader.seek(pos).context(SeekError { pos })?;
+        *self.reader_position = pos;
         self.next_chunk(len)
+    }
+
+    fn fade(
+        spec: hound::WavSpec,
+        reader_pos: u32,
+        len: u32,
+        in_len: Option<f32>,
+        out_len: Option<f32>,
+    ) -> impl Fn((usize, Result<f32, ReadError>)) -> Result<f32, ReadError> {
+        move |(idx, samp)| {
+            let len = len * u32::from(spec.channels);
+            let idx = (idx + reader_pos as usize) / spec.channels as usize * spec.channels as usize;
+            let mut s = samp?;
+
+            let in_samps = in_len.map(|v| (v * spec.sample_rate as f32) as usize);
+            let out_samps = out_len.map(|v| (v * spec.sample_rate as f32) as usize);
+
+            match in_samps {
+                Some(l) if idx < l => s *= idx as f32 / l as f32,
+                _ => (),
+            }
+
+            match out_samps {
+                Some(l) if (len as usize - idx) < l => s *= (len as usize - idx) as f32 / l as f32,
+                _ => (),
+            }
+
+            Ok(s)
+        }
     }
 
     // cursed
     pub fn next_chunk(&mut self, len: usize) -> Result<Vec<f32>, ReadError> {
-        match self.spec().sample_format {
+        let spec = self.spec();
+        let total_len = self.len();
+
+        let chunk = match self.spec().sample_format {
             hound::SampleFormat::Int => match self.spec().bits_per_sample {
                 8 => {
                     let samples = self.wav_reader.samples();
                     samples
                         .take(len)
                         .map(|v| v.context(DecodeError).map(i8::to_sample))
+                        .enumerate()
+                        .map(Self::fade(
+                            spec,
+                            *self.reader_position,
+                            total_len,
+                            self.fade_in,
+                            self.fade_out,
+                        ))
                         .collect()
                 }
                 16 => {
@@ -120,6 +165,14 @@ impl<'a> AsLoaded<'a> {
                     samples
                         .take(len)
                         .map(|v| v.context(DecodeError).map(i16::to_sample))
+                        .enumerate()
+                        .map(Self::fade(
+                            spec,
+                            *self.reader_position,
+                            total_len,
+                            self.fade_in,
+                            self.fade_out,
+                        ))
                         .collect()
                 }
                 24 => {
@@ -131,6 +184,14 @@ impl<'a> AsLoaded<'a> {
                                 .map(I24::new_unchecked)
                                 .map(I24::to_sample)
                         })
+                        .enumerate()
+                        .map(Self::fade(
+                            spec,
+                            *self.reader_position,
+                            total_len,
+                            self.fade_in,
+                            self.fade_out,
+                        ))
                         .collect()
                 }
                 v => Err(ReadError::UnsupportedDepth { depth: v }),
@@ -138,10 +199,25 @@ impl<'a> AsLoaded<'a> {
             hound::SampleFormat::Float => match self.spec().bits_per_sample {
                 32 => {
                     let samples = self.wav_reader.samples();
-                    samples.take(len).map(|v| v.context(DecodeError)).collect()
+                    samples
+                        .take(len)
+                        .map(|v| v.context(DecodeError))
+                        .enumerate()
+                        .map(Self::fade(
+                            spec,
+                            *self.reader_position,
+                            total_len,
+                            self.fade_in,
+                            self.fade_out,
+                        ))
+                        .collect()
                 }
                 v => Err(ReadError::UnsupportedDepth { depth: v }),
             },
-        }
+        };
+
+        *self.reader_position += len as u32;
+
+        chunk
     }
 }
