@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -6,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};
 
 use crate::audio;
+use crate::scope;
 
 #[derive(Debug, Snafu)]
 pub enum ReadError {
@@ -31,6 +33,7 @@ pub enum WriteError {
 #[derive(Default, Deserialize, Serialize)]
 pub struct State {
     pub audio_sources: Vec<audio::source::AudioSource>,
+    pub scopes: HashMap<String, scope::Scope>,
 }
 
 impl State {

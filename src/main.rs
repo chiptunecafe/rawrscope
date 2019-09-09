@@ -3,6 +3,7 @@ mod audio;
 mod commands;
 mod config;
 mod panic;
+mod scope;
 mod state;
 
 fn main() {
