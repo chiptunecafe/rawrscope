@@ -145,6 +145,10 @@ impl<I: Iterator<Item = Submission>> Mixer<I> {
         }
     }
 
+    pub fn submission_queue(&mut self) -> &mut I {
+        &mut self.submission_queue
+    }
+
     pub fn into_stream(self) -> MixerStream<I> {
         self.flatten()
     }
