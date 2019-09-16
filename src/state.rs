@@ -3,6 +3,7 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
+use derivative::Derivative;
 use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};
 
@@ -30,10 +31,29 @@ pub enum WriteError {
     SerializeError { source: ron::ser::Error },
 }
 
+#[derive(Derivative, Deserialize, Serialize)]
+#[derivative(Default)]
+pub struct GlobalAppearance {
+    #[derivative(Default(value = "1"))]
+    pub grid_rows: u32,
+    #[derivative(Default(value = "1"))]
+    pub grid_columns: u32,
+}
+
+// TODO maybe move some of this stuff into a separate module
+#[derive(Deserialize, Serialize)]
+pub struct GridRect {
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+}
+
 #[derive(Default, Deserialize, Serialize)]
 pub struct State {
     pub audio_sources: Vec<audio::source::AudioSource>,
     pub scopes: HashMap<String, scope::Scope>,
+    pub appearance: GlobalAppearance,
 }
 
 impl State {

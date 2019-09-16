@@ -199,7 +199,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                     ConnectionTarget::Master => {
                         sub.add(sample_rate, conn.target_channel as usize, channel_iter);
                     }
-                    _ => unimplemented!(),
+                    _ => log::warn!("scope connections unimplemented"),
                 }
             }
         }

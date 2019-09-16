@@ -9,6 +9,7 @@ license = "GPL-3.0-or-later"
 clap = "2.33.0"
 cpal = "0.10.0"
 crossbeam-channel = "0.3.8"
+derivative = "1.0.3"
 failure = "0.1.5"
 fern = { version = "0.5.8", features = ["colored"] }
 hound = "3.4.0"
