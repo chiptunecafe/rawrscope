@@ -1,14 +1,32 @@
 name: Build and test
 on: [push]
 jobs:
-  build:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macOS-latest]
-      fail-fast: false
-    runs-on: ${{ matrix.os }}
+  build_ubuntu:
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v1
+    - name: Install dependencies
+      run: sudo apt-get install libasound2-dev
+    - name: Build
+      run: cargo build
+    - name: Test
+      run: cargo test
+  build_windows:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: Install dependencies
+      run: choco install llvm
+    - name: Build
+      run: cargo build
+    - name: Test
+      run: cargo test
+  build_macos:
+    runs-on: macOS-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: Install dependencies
+      run: brew install rust
     - name: Build
       run: cargo build
     - name: Test
