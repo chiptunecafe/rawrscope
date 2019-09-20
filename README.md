@@ -3,6 +3,12 @@
 rawrscope is a fast, user-friendly, and cross-platform tool for creating
 oscilloscope visualizations of audio, typically chiptune.
 
+## Build Status
+
+![](https://github.com/chiptunecafe/rawrscope/workflows/Build%20and%20test/badge.svg)
+
+*TODO: somehow have separate badges for each os*
+
 ## Features
 
 \* = unimplemented
