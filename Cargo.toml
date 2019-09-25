@@ -23,7 +23,7 @@ snafu = "0.4.1"
 tinyfiledialogs = "3.3.6"
 toml = "0.5.1"
 
-[patch]
+[patch.crates-io]
 coreaudio-sys = { git = "https://github.com/RustAudio/coreaudio-sys" }
 
 [profile.release]
