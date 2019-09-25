@@ -23,5 +23,8 @@ snafu = "0.4.1"
 tinyfiledialogs = "3.3.6"
 toml = "0.5.1"
 
+[patch]
+coreaudio-sys = { git = "https://github.com/RustAudio/coreaudio-sys" }
+
 [profile.release]
 debug = true
