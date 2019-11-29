@@ -123,13 +123,16 @@ fn audio_device(config: &config::Config, host: &cpal::Host) -> Result<cpal::Devi
 fn _run(state_file: Option<&str>) -> Result<(), Error> {
     set_hook(panic::dialog(take_hook()));
 
+    // load config
     let config = config::Config::load();
     let mut state = load_state(state_file);
 
+    // create window
     let event_loop = EventLoop::new();
     let window = Window::new(&event_loop).context(WindowCreation)?;
     let mut window_size = window.inner_size().to_physical(window.hidpi_factor());
 
+    // initialize wgpu adapter and device
     let surface = wgpu::Surface::create(&window);
     let adapter = wgpu::Adapter::request(&wgpu::RequestAdapterOptions {
         power_preference: wgpu::PowerPreference::HighPerformance, // maybe do not request high perf
@@ -137,13 +140,14 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     })
     .context(AdapterSelection)?;
 
-    let (mut device, mut queue) = adapter.request_device(&wgpu::DeviceDescriptor {
+    let (device, mut queue) = adapter.request_device(&wgpu::DeviceDescriptor {
         extensions: wgpu::Extensions {
             anisotropic_filtering: false,
         },
         limits: wgpu::Limits::default(),
     });
 
+    // create swapchain
     let mut swap_desc = wgpu::SwapChainDescriptor {
         usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
         format: wgpu::TextureFormat::Bgra8Unorm,
@@ -153,9 +157,11 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     };
     let mut swapchain = device.create_swap_chain(&surface, &swap_desc);
 
+    // initialize audio device
     let audio_host = audio_host(&config);
     let audio_dev = audio_device(&config, &audio_host)?;
 
+    // create and configure master mixer
     let mut master = playback::Player::new(audio_host, audio_dev).context(MasterCreation)?;
 
     let mut mixer_config = mixer::MixerBuilder::new();
@@ -177,6 +183,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
         log::warn!("Failed to rebuild master mixer: {}", e);
     }
 
+    // initialize imgui
     let mut imgui = imgui::Context::create();
     let mut imgui_plat = imgui_winit_support::WinitPlatform::init(&mut imgui);
     imgui_plat.attach_window(
@@ -203,6 +210,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     let mut imgui_renderer =
         imgui_wgpu::Renderer::new(&mut imgui, &device, &mut queue, swap_desc.format, None);
 
+    // TODO remove hardcoded vars
     let framerate = 60u16;
     let frame_secs = 1.0 / f32::from(framerate);
 
@@ -229,6 +237,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
             event::Event::EventsCleared => {
                 *control_flow = ControlFlow::Poll;
 
+                // create audio submission
                 let mut sub = sub_builder.create(frame_secs);
 
                 let mut loaded_sources = state
@@ -277,6 +286,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                     log::error!("Failed to submit audio to master: {}", e);
                 }
 
+                // begin rendering
                 let swap_frame = swapchain.get_next_texture();
 
                 imgui_plat
