@@ -5,6 +5,7 @@ mod config;
 mod panic;
 mod scope;
 mod state;
+mod ui;
 
 fn main() {
     let matches = args::get().get_matches();

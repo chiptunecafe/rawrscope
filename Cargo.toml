@@ -13,6 +13,9 @@ derivative = "1.0.3"
 failure = "0.1.5"
 fern = { version = "0.5.8", features = ["colored"] }
 hound = "3.4.0"
+imgui = "0.2.1"
+imgui-winit-support = { version = "0.2.1", default-features = false, features = ["winit-20"] }
+imgui-wgpu = { git = "https://github.com/Yatekii/imgui-wgpu-rs" }
 log = "0.4.7"
 parking_lot = "0.9.0"
 ron = "0.5.1"

@@ -177,6 +177,32 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
         log::warn!("Failed to rebuild master mixer: {}", e);
     }
 
+    let mut imgui = imgui::Context::create();
+    let mut imgui_plat = imgui_winit_support::WinitPlatform::init(&mut imgui);
+    imgui_plat.attach_window(
+        imgui.io_mut(),
+        &window,
+        imgui_winit_support::HiDpiMode::Default,
+    );
+    imgui.set_ini_filename(None);
+
+    let font_size = (13.0 * window.hidpi_factor()) as f32;
+    imgui.io_mut().font_global_scale = (1.0 / window.hidpi_factor()) as f32;
+
+    imgui
+        .fonts()
+        .add_font(&[imgui::FontSource::DefaultFontData {
+            config: Some(imgui::FontConfig {
+                oversample_h: 1,
+                pixel_snap_h: true,
+                size_pixels: font_size,
+                ..Default::default()
+            }),
+        }]);
+
+    let mut imgui_renderer =
+        imgui_wgpu::Renderer::new(&mut imgui, &device, &mut queue, swap_desc.format, None);
+
     let framerate = 60u16;
     let frame_secs = 1.0 / f32::from(framerate);
 
@@ -184,6 +210,8 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
 
     event_loop.run(move |event, _, control_flow| {
         let sub_builder = master.submission_builder(); // TODO optimize
+
+        imgui_plat.handle_event(imgui.io_mut(), &window, &event);
 
         match event {
             event::Event::WindowEvent { event, .. } => match event {
@@ -250,6 +278,14 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                 }
 
                 let swap_frame = swapchain.get_next_texture();
+
+                imgui_plat
+                    .prepare_frame(imgui.io_mut(), &window)
+                    .expect("Failed to prepare UI rendering"); // TODO do not expect (need to figure out err handling in event loop)
+                let im_ui = imgui.frame();
+
+                crate::ui::ui(&mut state, &im_ui);
+
                 let mut encoder: wgpu::CommandEncoder =
                     device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
 
@@ -271,6 +307,11 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                         depth_stencil_attachment: None,
                     });
                 }
+
+                imgui_plat.prepare_render(&im_ui, &window);
+                imgui_renderer
+                    .render(im_ui.render(), &device, &mut encoder, &swap_frame.view)
+                    .expect("Failed to render UI"); // TODO do not expect
 
                 queue.submit(&[encoder.finish()]);
 
