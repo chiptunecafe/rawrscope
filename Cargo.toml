@@ -23,6 +23,7 @@ snafu = "0.4.1"
 tinyfiledialogs = "3.3.6"
 toml = "0.5.1"
 winit = "0.20.0-alpha4"
+wgpu = "0.4.0"
 
 [patch.crates-io]
 libsamplerate-sys = { git = "https://github.com/rytone/libsamplerate-sys" }

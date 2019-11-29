@@ -23,6 +23,9 @@ enum Error {
     #[snafu(display("Failed to create window: {}", source))]
     WindowCreation { source: winit::error::OsError },
 
+    #[snafu(display("No sufficient graphics card available!"))]
+    AdapterSelection,
+
     #[snafu(display("Failed to create master audio player: {}", source))]
     MasterCreation { source: playback::CreateError },
 }
@@ -125,6 +128,30 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
 
     let event_loop = EventLoop::new();
     let window = Window::new(&event_loop).context(WindowCreation)?;
+    let mut window_size = window.inner_size().to_physical(window.hidpi_factor());
+
+    let surface = wgpu::Surface::create(&window);
+    let adapter = wgpu::Adapter::request(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance, // maybe do not request high perf
+        backends: wgpu::BackendBit::PRIMARY,
+    })
+    .context(AdapterSelection)?;
+
+    let (mut device, mut queue) = adapter.request_device(&wgpu::DeviceDescriptor {
+        extensions: wgpu::Extensions {
+            anisotropic_filtering: false,
+        },
+        limits: wgpu::Limits::default(),
+    });
+
+    let mut swap_desc = wgpu::SwapChainDescriptor {
+        usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
+        format: wgpu::TextureFormat::Bgra8Unorm,
+        width: window_size.width as u32,
+        height: window_size.height as u32,
+        present_mode: wgpu::PresentMode::Vsync,
+    };
+    let mut swapchain = device.create_swap_chain(&surface, &swap_desc);
 
     let audio_host = audio_host(&config);
     let audio_dev = audio_device(&config, &audio_host)?;
@@ -168,6 +195,14 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
         match event {
             event::Event::WindowEvent { event, .. } => match event {
                 event::WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
+                event::WindowEvent::Resized(_) => {
+                    window_size = window.inner_size().to_physical(window.hidpi_factor());
+
+                    swap_desc.width = window_size.width as u32;
+                    swap_desc.height = window_size.height as u32;
+
+                    swapchain = device.create_swap_chain(&surface, &swap_desc);
+                }
                 _ => {}
             },
             event::Event::EventsCleared => {
@@ -222,6 +257,31 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                 if let Err(e) = master.submit(sub) {
                     log::error!("Failed to submit audio to master: {}", e);
                 }
+
+                let swap_frame = swapchain.get_next_texture();
+                let mut encoder: wgpu::CommandEncoder =
+                    device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+
+                // clear screen
+                {
+                    encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
+                            attachment: &swap_frame.view,
+                            resolve_target: None,
+                            load_op: wgpu::LoadOp::Clear,
+                            store_op: wgpu::StoreOp::Store,
+                            clear_color: wgpu::Color {
+                                r: 0.3,
+                                g: 0.3,
+                                b: 0.3,
+                                a: 1.0,
+                            },
+                        }],
+                        depth_stencil_attachment: None,
+                    });
+                }
+
+                queue.submit(&[encoder.finish()]);
 
                 frame += 1;
             }
