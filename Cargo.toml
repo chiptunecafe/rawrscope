@@ -17,14 +17,14 @@ log = "0.4.7"
 parking_lot = "0.9.0"
 ron = "0.5.1"
 sample = "0.10.0"
-samplerate = { git = "https://github.com/rytone/rust-samplerate" }
+samplerate = "0.2.1"
 serde = { version = "1.0.97", features = ["derive"] }
 snafu = "0.4.1"
 tinyfiledialogs = "3.3.6"
 toml = "0.5.1"
 
 [patch.crates-io]
-coreaudio-sys = { git = "https://github.com/RustAudio/coreaudio-sys" }
+libsamplerate-sys = { git = "https://github.com/rytone/libsamplerate-sys" }
 
 [profile.release]
 debug = true
