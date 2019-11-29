@@ -3,6 +3,11 @@ use std::panic::{set_hook, take_hook};
 
 use cpal::traits::{DeviceTrait, HostTrait};
 use snafu::{OptionExt, ResultExt, Snafu};
+use winit::{
+    event,
+    event_loop::{ControlFlow, EventLoop},
+    window::Window,
+};
 
 use crate::audio::{connection::ConnectionTarget, mixer, playback};
 use crate::config;
@@ -14,6 +19,9 @@ use crate::state::{self, State};
 enum Error {
     #[snafu(display("No output device available on host \"{:?}\"", host))]
     NoOutputDevice { host: cpal::HostId },
+
+    #[snafu(display("Failed to create window: {}", source))]
+    WindowCreation { source: winit::error::OsError },
 
     #[snafu(display("Failed to create master audio player: {}", source))]
     MasterCreation { source: playback::CreateError },
@@ -115,6 +123,9 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     let config = config::Config::load();
     let mut state = load_state(state_file);
 
+    let event_loop = EventLoop::new();
+    let window = Window::new(&event_loop).context(WindowCreation)?;
+
     let audio_host = audio_host(&config);
     let audio_dev = audio_device(&config, &audio_host)?;
 
@@ -144,75 +155,79 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
 
     let window_ms = 50;
 
-    let frame_len = std::time::Duration::from_micros(1_000_000 / u64::from(framerate));
-
-    let mut loaded_sources = state
-        .audio_sources
-        .iter_mut()
-        .filter_map(|s| s.as_loaded())
-        .collect::<Vec<_>>();
-
-    let sub_builder = master.submission_builder();
     let mut frame = 0;
-    loop {
-        if loaded_sources
-            .iter()
-            .all(|source| frame > source.len() / (source.spec().sample_rate / u32::from(framerate)))
-        {
-            std::thread::sleep(frame_len);
-            continue;
-        }
+    event_loop.run(move |event, _, control_flow| {
+        // TODO optimize this moved shit
+        let mut loaded_sources = state
+            .audio_sources
+            .iter_mut()
+            .filter_map(|s| s.as_loaded())
+            .collect::<Vec<_>>();
+        let sub_builder = master.submission_builder();
 
-        let st = std::time::Instant::now();
-
-        let mut sub = sub_builder.create(frame_secs);
-
-        for source in &mut loaded_sources {
-            let channels = source.spec().channels;
-            let sample_rate = source.spec().sample_rate;
-
-            let window_len = sample_rate * window_ms / 1000 * u32::from(channels);
-            let window_pos = (sample_rate / u32::from(framerate)) * frame;
-
-            // TODO dont panic
-            let window = source
-                .chunk_at(window_pos, window_len as usize)
-                .unwrap()
-                .iter()
-                .copied()
-                .collect::<Vec<_>>();
-
-            let chunk_len = sub
-                .length_of_channel(sample_rate)
-                .expect("submission missing sample rate!")
-                * channels as usize;
-
-            let chunk = &window[0..chunk_len.min(window.len())];
-
-            for conn in source.connections {
-                let channel_iter = chunk
-                    .iter()
-                    .skip(conn.channel as usize)
-                    .step_by(channels as usize)
-                    .copied();
-                match conn.target {
-                    ConnectionTarget::Master => {
-                        sub.add(sample_rate, conn.target_channel as usize, channel_iter);
-                    }
-                    _ => log::warn!("scope connections unimplemented"),
+        match event {
+            event::Event::WindowEvent { event, .. } => match event {
+                event::WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
+                _ => {}
+            },
+            event::Event::EventsCleared => {
+                if loaded_sources.iter().all(|source| {
+                    frame > source.len() / (source.spec().sample_rate / u32::from(framerate))
+                }) {
+                    *control_flow = ControlFlow::Wait;
+                    return;
                 }
+
+                *control_flow = ControlFlow::Poll;
+
+                let mut sub = sub_builder.create(frame_secs);
+
+                for source in &mut loaded_sources {
+                    let channels = source.spec().channels;
+                    let sample_rate = source.spec().sample_rate;
+
+                    let window_len = sample_rate * window_ms / 1000 * u32::from(channels);
+                    let window_pos = (sample_rate / u32::from(framerate)) * frame;
+
+                    // TODO dont panic
+                    let window = source
+                        .chunk_at(window_pos, window_len as usize)
+                        .unwrap()
+                        .iter()
+                        .copied()
+                        .collect::<Vec<_>>();
+
+                    let chunk_len = sub
+                        .length_of_channel(sample_rate)
+                        .expect("submission missing sample rate!")
+                        * channels as usize;
+
+                    let chunk = &window[0..chunk_len.min(window.len())];
+
+                    for conn in source.connections {
+                        let channel_iter = chunk
+                            .iter()
+                            .skip(conn.channel as usize)
+                            .step_by(channels as usize)
+                            .copied();
+                        match conn.target {
+                            ConnectionTarget::Master => {
+                                sub.add(sample_rate, conn.target_channel as usize, channel_iter);
+                            }
+                            _ => log::warn!("scope connections unimplemented"),
+                        }
+                    }
+                }
+
+                if let Err(e) = master.submit(sub) {
+                    log::error!("Failed to submit audio to master: {}", e);
+                }
+
+                frame += 1;
             }
+            _ => {}
         }
-
-        if let Err(e) = master.submit(sub) {
-            log::error!("Failed to submit audio to master: {}", e);
-        }
-
-        let elapsed = st.elapsed();
-        std::thread::sleep((frame_len - elapsed) / 2);
-
-        frame += 1;
-    }
+    });
 }
 
 pub fn run(state_file: Option<&str>) {

@@ -22,6 +22,7 @@ serde = { version = "1.0.97", features = ["derive"] }
 snafu = "0.4.1"
 tinyfiledialogs = "3.3.6"
 toml = "0.5.1"
+winit = "0.20.0-alpha4"
 
 [patch.crates-io]
 libsamplerate-sys = { git = "https://github.com/rytone/libsamplerate-sys" }
