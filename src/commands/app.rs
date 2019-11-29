@@ -182,15 +182,8 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
 
     let window_ms = 50;
 
-    let mut frame = 0;
     event_loop.run(move |event, _, control_flow| {
-        // TODO optimize this moved shit
-        let mut loaded_sources = state
-            .audio_sources
-            .iter_mut()
-            .filter_map(|s| s.as_loaded())
-            .collect::<Vec<_>>();
-        let sub_builder = master.submission_builder();
+        let sub_builder = master.submission_builder(); // TODO optimize
 
         match event {
             event::Event::WindowEvent { event, .. } => match event {
@@ -206,23 +199,21 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                 _ => {}
             },
             event::Event::EventsCleared => {
-                if loaded_sources.iter().all(|source| {
-                    frame > source.len() / (source.spec().sample_rate / u32::from(framerate))
-                }) {
-                    *control_flow = ControlFlow::Wait;
-                    return;
-                }
-
                 *control_flow = ControlFlow::Poll;
 
                 let mut sub = sub_builder.create(frame_secs);
 
+                let mut loaded_sources = state
+                    .audio_sources
+                    .iter_mut()
+                    .filter_map(|s| s.as_loaded())
+                    .collect::<Vec<_>>();
                 for source in &mut loaded_sources {
                     let channels = source.spec().channels;
                     let sample_rate = source.spec().sample_rate;
 
                     let window_len = sample_rate * window_ms / 1000 * u32::from(channels);
-                    let window_pos = (sample_rate / u32::from(framerate)) * frame;
+                    let window_pos = (sample_rate / u32::from(framerate)) * state.frame;
 
                     // TODO dont panic
                     let window = source
@@ -283,7 +274,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
 
                 queue.submit(&[encoder.finish()]);
 
-                frame += 1;
+                state.frame += 1;
             }
             _ => {}
         }
