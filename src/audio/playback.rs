@@ -53,7 +53,7 @@ impl Player {
             .map_err(|e| e.compat())
             .context(NoOutputFormats)?;
 
-        let (submission_queue, sub_rx) = crossbeam_channel::unbounded();
+        let (submission_queue, sub_rx) = crossbeam_channel::bounded(0);
         let mut mixer_builder = mixer::MixerBuilder::new();
         mixer_builder.channels(format.channels as usize);
         mixer_builder.target_sample_rate(format.sample_rate.0);
