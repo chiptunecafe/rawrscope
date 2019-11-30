@@ -40,6 +40,20 @@ oscilloscope visualizations of audio, typically chiptune.
 
 *TODO*
 
+## Contributing
+
+Any help resolving issues is appreciated, issues tagged
+[`X=help needed`](https://github.com/chiptunecafe/rawrscope/issues?q=label%3A%22X%3Dhelp+needed%22) 
+are likely a good place to start. If coding isn't your thing, then issues tagged
+[`X=feedback wanted`](https://github.com/chiptunecafe/rawrscope/issues?q=label%3A%22X%3Dfeedback+wanted%22)
+could still use your help.
+
+All code contributed should be formatted with `rustfmt` before being merged.
+
+rawrscope is licenced under GPLv3+, see
+[`COPYING`](https://github.com/chiptunecafe/rawrscope/blob/master/COPYING)
+for details.
+
 ## Future Roadmap
 
 * Full timeline editor for audio sources
