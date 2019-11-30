@@ -9,7 +9,10 @@ use winit::{
     window::Window,
 };
 
-use crate::audio::{connection::ConnectionTarget, mixer, playback};
+use crate::audio::{
+    connection::{ConnectionTarget, MasterChannel},
+    mixer, playback,
+};
 use crate::config;
 use crate::panic;
 use crate::state::{self, State};
@@ -172,7 +175,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
         if source
             .connections
             .iter()
-            .any(|conn| conn.target == ConnectionTarget::Master)
+            .any(|conn| conn.target.is_master())
         {
             let sample_rate = source.spec().sample_rate;
             mixer_config.source_rate(sample_rate);
@@ -282,10 +285,13 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                                 .step_by(channels as usize)
                                 .copied();
                             match conn.target {
-                                ConnectionTarget::Master => {
+                                ConnectionTarget::Master { ref channel } => {
                                     sub.add(
                                         sample_rate,
-                                        conn.target_channel as usize,
+                                        match channel {
+                                            MasterChannel::Left => 0,
+                                            MasterChannel::Right => 1,
+                                        },
                                         channel_iter,
                                     );
                                 }
