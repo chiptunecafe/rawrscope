@@ -240,46 +240,63 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                 // create audio submission
                 let mut sub = sub_builder.create(frame_secs);
 
+                let f = state.playback.frame;
                 let mut loaded_sources = state
                     .audio_sources
                     .iter_mut()
                     .filter_map(|s| s.as_loaded())
                     .collect::<Vec<_>>();
-                for source in &mut loaded_sources {
-                    let channels = source.spec().channels;
-                    let sample_rate = source.spec().sample_rate;
 
-                    let window_len = sample_rate * window_ms / 1000 * u32::from(channels);
-                    let window_pos = (sample_rate / u32::from(framerate)) * state.playback.frame;
+                let sources_exhausted = loaded_sources.iter().all(|source| {
+                    f > source.len() / (source.spec().sample_rate / u32::from(framerate))
+                });
 
-                    // TODO dont panic
-                    let window = source
-                        .chunk_at(window_pos, window_len as usize)
-                        .unwrap()
-                        .iter()
-                        .copied()
-                        .collect::<Vec<_>>();
+                if !sources_exhausted && state.playback.playing {
+                    for source in &mut loaded_sources {
+                        let channels = source.spec().channels;
+                        let sample_rate = source.spec().sample_rate;
 
-                    let chunk_len = sub
-                        .length_of_channel(sample_rate)
-                        .expect("submission missing sample rate!")
-                        * channels as usize;
+                        let window_len = sample_rate * window_ms / 1000 * u32::from(channels);
+                        let window_pos =
+                            (sample_rate / u32::from(framerate)) * state.playback.frame;
 
-                    let chunk = &window[0..chunk_len.min(window.len())];
-
-                    for conn in source.connections {
-                        let channel_iter = chunk
+                        // TODO dont panic
+                        let window = source
+                            .chunk_at(window_pos, window_len as usize)
+                            .unwrap()
                             .iter()
-                            .skip(conn.channel as usize)
-                            .step_by(channels as usize)
-                            .copied();
-                        match conn.target {
-                            ConnectionTarget::Master => {
-                                sub.add(sample_rate, conn.target_channel as usize, channel_iter);
+                            .copied()
+                            .collect::<Vec<_>>();
+
+                        let chunk_len = sub
+                            .length_of_channel(sample_rate)
+                            .expect("submission missing sample rate!")
+                            * channels as usize;
+
+                        let chunk = &window[0..chunk_len.min(window.len())];
+
+                        for conn in source.connections {
+                            let channel_iter = chunk
+                                .iter()
+                                .skip(conn.channel as usize)
+                                .step_by(channels as usize)
+                                .copied();
+                            match conn.target {
+                                ConnectionTarget::Master => {
+                                    sub.add(
+                                        sample_rate,
+                                        conn.target_channel as usize,
+                                        channel_iter,
+                                    );
+                                }
+                                _ => log::warn!("scope connections unimplemented"),
                             }
-                            _ => log::warn!("scope connections unimplemented"),
                         }
                     }
+                } else if sources_exhausted && state.playback.playing {
+                    state.playback.playing = false;
+                } else {
+                    // TODO send blank audio submissions
                 }
 
                 if let Err(e) = master.submit(sub) {
@@ -325,7 +342,9 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
 
                 queue.submit(&[encoder.finish()]);
 
-                state.playback.frame += 1;
+                if state.playback.playing {
+                    state.playback.frame += 1;
+                }
             }
             _ => {}
         }
