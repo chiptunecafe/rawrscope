@@ -64,6 +64,9 @@ pub struct State {
     pub appearance: GlobalAppearance,
 
     #[serde(skip)]
+    pub file_path: PathBuf,
+
+    #[serde(skip)]
     pub playback: PlaybackState,
 }
 
@@ -79,6 +82,7 @@ impl State {
         })?;
 
         let mut state: State = ron::de::from_reader(file).context(ParseError)?;
+        state.file_path = path.to_path_buf();
 
         warnings.extend(
             state
