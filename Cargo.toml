@@ -18,10 +18,10 @@ imgui-winit-support = { version = "0.2.1", default-features = false, features = 
 imgui-wgpu = { git = "https://github.com/Yatekii/imgui-wgpu-rs" }
 log = "0.4.7"
 parking_lot = "0.9.0"
-ron = "0.5.1"
 sample = "0.10.0"
 samplerate = "0.2.1"
 serde = { version = "1.0.97", features = ["derive"] }
+serde_yaml = "0.8.11"
 snafu = "0.4.1"
 tinyfiledialogs = "3.3.6"
 toml = "0.5.1"

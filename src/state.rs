@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
-use std::io::{self, Write};
+use std::io;
 use std::path::{Path, PathBuf};
 
 use derivative::Derivative;
@@ -16,7 +16,7 @@ pub enum ReadError {
     OpenError { path: PathBuf, source: io::Error },
 
     #[snafu(display("Failed to parse project: {}", source))]
-    ParseError { source: ron::de::Error },
+    ParseError { source: serde_yaml::Error },
 }
 
 #[derive(Debug, Snafu)]
@@ -28,7 +28,7 @@ pub enum WriteError {
     IoError { source: io::Error },
 
     #[snafu(display("Failed to serialize project: {}", source))]
-    SerializeError { source: ron::ser::Error },
+    SerializeError { source: serde_yaml::Error },
 }
 
 #[derive(Derivative, Deserialize, Serialize)]
@@ -81,7 +81,7 @@ impl State {
             path: path.to_path_buf(),
         })?;
 
-        let mut state: State = ron::de::from_reader(file).context(ParseError)?;
+        let mut state: State = serde_yaml::from_reader(file).context(ParseError)?;
         state.file_path = path.to_path_buf();
 
         warnings.extend(
@@ -97,14 +97,12 @@ impl State {
 
     pub fn write<P: AsRef<Path>>(&self, path: P) -> Result<(), WriteError> {
         let path = path.as_ref();
-        let mut file = fs::File::create(path).context(CreateError {
+        let file = fs::File::create(path).context(CreateError {
             path: path.to_path_buf(),
         })?;
 
-        let serialized =
-            ron::ser::to_string_pretty(self, Default::default()).context(SerializeError)?;
+        serde_yaml::to_writer(file, self).context(SerializeError)?;
 
-        file.write_all(serialized.as_ref()).context(IoError)?;
         log::info!("Saved project! ({})", path.display());
 
         Ok(())
