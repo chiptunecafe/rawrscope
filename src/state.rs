@@ -104,6 +104,9 @@ impl State {
         let serialized =
             ron::ser::to_string_pretty(self, Default::default()).context(SerializeError)?;
 
-        file.write_all(serialized.as_ref()).context(IoError)
+        file.write_all(serialized.as_ref()).context(IoError)?;
+        log::info!("Saved project! ({})", path.display());
+
+        Ok(())
     }
 }
