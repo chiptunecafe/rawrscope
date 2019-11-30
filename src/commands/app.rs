@@ -295,8 +295,6 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                     }
                 } else if sources_exhausted && state.playback.playing {
                     state.playback.playing = false;
-                } else {
-                    // TODO send blank audio submissions
                 }
 
                 if let Err(e) = master.submit(sub) {
