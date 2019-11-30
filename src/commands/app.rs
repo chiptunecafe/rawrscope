@@ -250,7 +250,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                     let sample_rate = source.spec().sample_rate;
 
                     let window_len = sample_rate * window_ms / 1000 * u32::from(channels);
-                    let window_pos = (sample_rate / u32::from(framerate)) * state.frame;
+                    let window_pos = (sample_rate / u32::from(framerate)) * state.playback.frame;
 
                     // TODO dont panic
                     let window = source
@@ -325,7 +325,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
 
                 queue.submit(&[encoder.finish()]);
 
-                state.frame += 1;
+                state.playback.frame += 1;
             }
             _ => {}
         }

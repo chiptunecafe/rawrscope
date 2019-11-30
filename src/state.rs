@@ -49,18 +49,22 @@ pub struct GridRect {
     h: u32,
 }
 
-#[derive(Derivative, Deserialize, Serialize)]
+#[derive(Derivative)]
 #[derivative(Default)]
+pub struct PlaybackState {
+    pub frame: u32,
+    #[derivative(Default(value = "true"))]
+    pub playing: bool,
+}
+
+#[derive(Default, Deserialize, Serialize)]
 pub struct State {
     pub audio_sources: Vec<audio::source::AudioSource>,
     pub scopes: HashMap<String, scope::Scope>,
     pub appearance: GlobalAppearance,
 
     #[serde(skip)]
-    pub frame: u32,
-    #[serde(skip)]
-    #[derivative(Default(value = "true"))]
-    pub playing: bool,
+    pub playback: PlaybackState,
 }
 
 impl State {

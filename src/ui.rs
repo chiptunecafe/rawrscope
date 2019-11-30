@@ -6,7 +6,7 @@ pub fn ui<'a, 'ui>(state: &'a mut State, ui: &'a Ui<'ui>) {
         .size([300.0, 100.0], imgui::Condition::Always)
         .resizable(false)
         .build(&ui, || {
-            ui.text(im_str!("Playing: {}", state.playing));
-            ui.text(im_str!("Frame: {}", state.frame));
+            ui.text(im_str!("Playing: {}", state.playback.playing));
+            ui.text(im_str!("Frame: {}", state.playback.frame));
         });
 }
