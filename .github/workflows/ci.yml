@@ -1,6 +1,24 @@
 name: CI
 on: [push]
 jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macOS-latest]
+    steps:
+    - uses: hecrj/setup-rust-action@v1
+      with:
+        rust-version: nightly
+    - uses: actions/checkout@v1
+    - name: Install Linux dependencies
+      if: matrix.os == 'ubuntu-latest'
+      run: sudo apt-get install libasound2-dev
+    - name: Install Windows dependencies
+      if: matrix.os == 'windows-latest'
+      run: choco install llvm
+    - name: Test
+      run: cargo test
   build:
     runs-on: ${{ matrix.os }}
     strategy:
@@ -9,7 +27,7 @@ jobs:
     steps:
     - uses: hecrj/setup-rust-action@v1
       with:
-        rust-version: stable
+        rust-version: nightly
     - uses: actions/checkout@v1
     - name: Install Linux dependencies
       if: matrix.os == 'ubuntu-latest'
@@ -18,6 +36,4 @@ jobs:
       if: matrix.os == 'windows-latest'
       run: choco install llvm
     - name: Build
-      run: cargo build
-    - name: Test
-      run: cargo test
+      run: cargo build --profile deploy -Z unstable-options

@@ -5,6 +5,9 @@ oscilloscope visualizations of audio, typically chiptune.
 
 ## Build Status
 
+*Note: rawrscope uses custom Cargo profiles for CI and thus requires a nightly
+toolchain.*
+
 ![](https://github.com/chiptunecafe/rawrscope/workflows/CI/badge.svg)
 
 *TODO: somehow have separate badges for each os*

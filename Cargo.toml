@@ -1,3 +1,5 @@
+cargo-features = ["named-profiles"]
+
 [package]
 name = "rawrscope"
 version = "0.1.0"
@@ -34,3 +36,9 @@ libsamplerate-sys = { git = "https://github.com/rytone/libsamplerate-sys" }
 
 [profile.release]
 debug = true
+
+[profile.deploy]
+inherits = "release"
+debug = false
+opt-level = 3
+lto = true
