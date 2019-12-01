@@ -211,7 +211,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
         }]);
 
     let mut imgui_renderer =
-        imgui_wgpu::Renderer::new(&mut imgui, &device, &mut queue, swap_desc.format, None);
+        imgui_wgpu::Renderer::new_static(&mut imgui, &device, &mut queue, swap_desc.format, None);
 
     // TODO remove hardcoded vars
     let framerate = 60u16;
