@@ -20,8 +20,9 @@ fn main() {
     fern::Dispatch::new()
         .format(move |out, message, record| {
             out.finish(format_args!(
-                "{:>6} {}",
+                "{:>6}@{}  {}",
                 colors.color(record.level()),
+                record.target(),
                 message,
             ))
         })
