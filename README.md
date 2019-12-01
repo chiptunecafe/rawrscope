@@ -5,7 +5,7 @@ oscilloscope visualizations of audio, typically chiptune.
 
 ## Build Status
 
-![](https://github.com/chiptunecafe/rawrscope/workflows/Build%20and%20test/badge.svg)
+![](https://github.com/chiptunecafe/rawrscope/workflows/CI/badge.svg)
 
 *TODO: somehow have separate badges for each os*
 
