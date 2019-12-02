@@ -37,3 +37,7 @@ jobs:
       run: choco install llvm
     - name: Build
       run: cargo build --profile deploy -Z unstable-options
+    - uses: actions/upload-artifact@v1
+      with:
+        name: rawrscope-${{ matrix.os }}
+        path: target/deploy/rawrscope
