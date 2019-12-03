@@ -1,7 +1,6 @@
 use std::io;
 use std::panic::{set_hook, take_hook};
 
-use cpal::traits::{DeviceTrait, HostTrait};
 use snafu::{OptionExt, ResultExt, Snafu};
 use winit::{
     event,
@@ -20,9 +19,6 @@ use crate::state::{self, State};
 // Errors are usually used when the app should quit
 #[derive(Debug, Snafu)]
 enum Error {
-    #[snafu(display("No output device available on host \"{:?}\"", host))]
-    NoOutputDevice { host: cpal::HostId },
-
     #[snafu(display("Failed to create window: {}", source))]
     WindowCreation { source: winit::error::OsError },
 
@@ -64,65 +60,6 @@ fn load_state(state_file: Option<&str>) -> state::State {
     }
 }
 
-fn audio_host(config: &config::Config) -> cpal::Host {
-    match &config.audio.host {
-        Some(host_name) => {
-            if let Some((id, _n)) = cpal::available_hosts()
-                .iter()
-                .map(|host_id| (host_id, format!("{:?}", host_id)))
-                .find(|(_id, n)| n == host_name)
-            {
-                cpal::host_from_id(*id).unwrap_or_else(|err| {
-                    log::warn!(
-                        "Could not use host \"{}\": {}, using default...",
-                        host_name,
-                        err
-                    );
-                    cpal::default_host()
-                })
-            } else {
-                log::warn!("Host \"{}\" does not exist! Using default...", host_name);
-                cpal::default_host()
-            }
-        }
-        None => cpal::default_host(),
-    }
-}
-
-fn audio_device(config: &config::Config, host: &cpal::Host) -> Result<cpal::Device, Error> {
-    match &config.audio.device {
-        Some(dev_name) => match host.output_devices() {
-            Ok(mut iter) => match iter.find(|dev| {
-                dev.name()
-                    .ok()
-                    .map(|name| &name == dev_name)
-                    .unwrap_or(false)
-            }) {
-                Some(d) => Ok(d),
-                None => {
-                    log::warn!(
-                        "Output device \"{}\" does not exist ... using default",
-                        dev_name
-                    );
-                    host.default_output_device()
-                        .context(NoOutputDevice { host: host.id() })
-                }
-            },
-            Err(e) => {
-                log::warn!(
-                    "Failed to query output devices: {} ... attempting to use default",
-                    e
-                );
-                host.default_output_device()
-                    .context(NoOutputDevice { host: host.id() })
-            }
-        },
-        None => host
-            .default_output_device()
-            .context(NoOutputDevice { host: host.id() }),
-    }
-}
-
 fn _run(state_file: Option<&str>) -> Result<(), Error> {
     set_hook(panic::dialog(take_hook()));
 
@@ -160,12 +97,8 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     };
     let mut swapchain = device.create_swap_chain(&surface, &swap_desc);
 
-    // initialize audio device
-    let audio_host = audio_host(&config);
-    let audio_dev = audio_device(&config, &audio_host)?;
-
-    // create and configure master mixer
-    let mut master = playback::Player::new(audio_host, audio_dev).context(MasterCreation)?;
+    // create and configure master player
+    let mut master = playback::Player::new(&config).context(MasterCreation)?;
 
     let mut mixer_config = mixer::MixerBuilder::new();
     mixer_config.channels(master.channels() as usize);

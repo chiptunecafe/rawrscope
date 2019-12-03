@@ -8,7 +8,7 @@ use cpal::{
 use failure::Fail;
 use parking_lot::Mutex;
 use sample::Sample;
-use snafu::{ResultExt, Snafu};
+use snafu::{OptionExt, ResultExt, Snafu};
 
 use crate::audio::mixer;
 
@@ -19,6 +19,12 @@ use crate::audio::mixer;
 
 #[derive(Debug, Snafu)]
 pub enum CreateError {
+    #[snafu(display("No output device available on host \"{:?}\"", host))]
+    NoOutputDevice { host: cpal::HostId },
+
+    #[snafu(display("Audio device initialization panicked!"))]
+    InitializationPanic,
+
     #[snafu(display("Failed to get output format for device: {}", source))]
     NoOutputFormats {
         source: failure::Compat<cpal::DefaultFormatError>,
@@ -35,6 +41,67 @@ pub enum CreateError {
     },
 }
 
+fn audio_host(config: &crate::config::Audio) -> cpal::Host {
+    match &config.host {
+        Some(host_name) => {
+            if let Some((id, _n)) = cpal::available_hosts()
+                .iter()
+                .map(|host_id| (host_id, format!("{:?}", host_id)))
+                .find(|(_id, n)| n == host_name)
+            {
+                cpal::host_from_id(*id).unwrap_or_else(|err| {
+                    log::warn!(
+                        "Could not use host \"{}\": {}, using default...",
+                        host_name,
+                        err
+                    );
+                    cpal::default_host()
+                })
+            } else {
+                log::warn!("Host \"{}\" does not exist! Using default...", host_name);
+                cpal::default_host()
+            }
+        }
+        None => cpal::default_host(),
+    }
+}
+
+fn audio_device(
+    config: &crate::config::Audio,
+    host: &cpal::Host,
+) -> Result<cpal::Device, CreateError> {
+    match &config.device {
+        Some(dev_name) => match host.output_devices() {
+            Ok(mut iter) => match iter.find(|dev| {
+                dev.name()
+                    .ok()
+                    .map(|name| &name == dev_name)
+                    .unwrap_or(false)
+            }) {
+                Some(d) => Ok(d),
+                None => {
+                    log::warn!(
+                        "Output device \"{}\" does not exist ... using default",
+                        dev_name
+                    );
+                    host.default_output_device()
+                        .context(NoOutputDevice { host: host.id() })
+                }
+            },
+            Err(e) => {
+                log::warn!(
+                    "Failed to query output devices: {} ... attempting to use default",
+                    e
+                );
+                host.default_output_device()
+                    .context(NoOutputDevice { host: host.id() })
+            }
+        },
+        None => host
+            .default_output_device()
+            .context(NoOutputDevice { host: host.id() }),
+    }
+}
 pub struct Player {
     audio_thread: thread::JoinHandle<()>,
     submission_builder: mixer::SubmissionBuilder,
@@ -45,13 +112,20 @@ pub struct Player {
 }
 
 impl Player {
-    pub fn new(host: cpal::Host, device: cpal::Device) -> Result<Self, CreateError> {
-        let ev = host.event_loop();
-
-        let format = device
-            .default_output_format()
-            .map_err(|e| e.compat())
-            .context(NoOutputFormats)?;
+    pub fn new(config: &crate::config::Config) -> Result<Self, CreateError> {
+        let config = config.audio.clone();
+        let (host, device, format) = thread::spawn(move || {
+            let host = audio_host(&config);
+            let device = audio_device(&config, &host)?;
+            let format = device
+                .default_output_format()
+                .map_err(|e| e.compat())
+                .context(NoOutputFormats)?;
+            Ok((host, device, format))
+        })
+        .join()
+        .ok()
+        .context(InitializationPanic)??;
 
         let (submission_queue, sub_rx) = crossbeam_channel::bounded(0);
         let mut mixer_builder = mixer::MixerBuilder::new();
@@ -63,54 +137,62 @@ impl Player {
         let submission_builder = mixer.submission_builder();
         let mixer_stream = Arc::new(Mutex::new(mixer.into_stream()));
 
-        let stream_id = ev
-            .build_output_stream(&device, &format)
-            .map_err(|e| e.compat())
-            .context(StreamCreateError)?;
-
-        ev.play_stream(stream_id)
-            .map_err(|e| e.compat())
-            .context(StreamPlayError)?;
-
         log::debug!("Starting audio thread: format={:?}", format);
         let audio_stream = mixer_stream.clone();
+        let thr_format = format.clone();
         let audio_thread = thread::spawn(move || {
-            ev.run(move |_stream_id, stream_res| {
-                let stream_data = match stream_res {
-                    Ok(data) => data,
-                    Err(err) => {
-                        log::error!("Audio playback stream error: {}", err);
-                        return;
-                    }
-                };
+            let ev = host.event_loop();
+            let res: Result<(), CreateError> = (move || {
+                let stream_id = ev
+                    .build_output_stream(&device, &thr_format)
+                    .map_err(|e| e.compat())
+                    .context(StreamCreateError)?;
 
-                let mut audio_stream = audio_stream.lock();
+                ev.play_stream(stream_id)
+                    .map_err(|e| e.compat())
+                    .context(StreamPlayError)?;
 
-                match stream_data {
-                    cpal::StreamData::Output {
-                        buffer: UOut::U16(mut buffer),
-                    } => {
-                        for elem in buffer.iter_mut() {
-                            *elem = audio_stream.next().unwrap_or(0f32).to_sample();
+                ev.run(move |_stream_id, stream_res| {
+                    let stream_data = match stream_res {
+                        Ok(data) => data,
+                        Err(err) => {
+                            log::error!("Audio playback stream error: {}", err);
+                            return;
                         }
-                    }
-                    cpal::StreamData::Output {
-                        buffer: UOut::I16(mut buffer),
-                    } => {
-                        for elem in buffer.iter_mut() {
-                            *elem = audio_stream.next().unwrap_or(0f32).to_sample();
+                    };
+
+                    let mut audio_stream = audio_stream.lock();
+
+                    match stream_data {
+                        cpal::StreamData::Output {
+                            buffer: UOut::U16(mut buffer),
+                        } => {
+                            for elem in buffer.iter_mut() {
+                                *elem = audio_stream.next().unwrap_or(0f32).to_sample();
+                            }
                         }
-                    }
-                    cpal::StreamData::Output {
-                        buffer: UOut::F32(mut buffer),
-                    } => {
-                        for elem in buffer.iter_mut() {
-                            *elem = audio_stream.next().unwrap_or(0f32);
+                        cpal::StreamData::Output {
+                            buffer: UOut::I16(mut buffer),
+                        } => {
+                            for elem in buffer.iter_mut() {
+                                *elem = audio_stream.next().unwrap_or(0f32).to_sample();
+                            }
                         }
+                        cpal::StreamData::Output {
+                            buffer: UOut::F32(mut buffer),
+                        } => {
+                            for elem in buffer.iter_mut() {
+                                *elem = audio_stream.next().unwrap_or(0f32);
+                            }
+                        }
+                        _ => (),
                     }
-                    _ => (),
-                }
-            })
+                });
+            })();
+
+            if let Err(e) = res {
+                log::error!("Unexpected audio thread error! {}", e);
+            }
         });
 
         Ok(Player {
