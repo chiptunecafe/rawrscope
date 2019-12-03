@@ -5,7 +5,7 @@ use snafu::{OptionExt, ResultExt, Snafu};
 use winit::{
     event,
     event_loop::{ControlFlow, EventLoop},
-    window::Window,
+    window::WindowBuilder,
 };
 
 use crate::audio::{
@@ -69,7 +69,12 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
 
     // create window
     let event_loop = EventLoop::new();
-    let window = Window::new(&event_loop).context(WindowCreation)?;
+    let window = WindowBuilder::new()
+        .with_inner_size((1600, 900).into())
+        .with_title("rawrscope")
+        .with_resizable(true)
+        .build(&event_loop)
+        .context(WindowCreation)?;
     let mut window_size = window.inner_size().to_physical(window.hidpi_factor());
 
     // initialize wgpu adapter and device
