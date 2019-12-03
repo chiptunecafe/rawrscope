@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 mod args;
 mod audio;
 mod commands;
