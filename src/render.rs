@@ -3,7 +3,7 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    fn new(gpu: &wgpu::Device) -> Self {
+    pub fn new(gpu: &wgpu::Device) -> Self {
         Renderer {
             tex: gpu.create_texture(&wgpu::TextureDescriptor {
                 size: wgpu::Extent3d {
@@ -21,7 +21,7 @@ impl Renderer {
         }
     }
 
-    fn render(&self, encoder: &mut wgpu::CommandEncoder) {
+    pub fn render(&self, encoder: &mut wgpu::CommandEncoder) {
         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
                 attachment: &self.tex.create_default_view(),

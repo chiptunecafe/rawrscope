@@ -151,6 +151,8 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     let mut imgui_renderer =
         imgui_wgpu::Renderer::new_static(&mut imgui, &device, &mut queue, swap_desc.format, None);
 
+    let scope_renderer = crate::render::Renderer::new(&device);
+
     // TODO remove hardcoded vars
     let framerate = 60u16;
     let frame_secs = 1.0 / f32::from(framerate);
@@ -257,6 +259,9 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
 
                 let mut encoder: wgpu::CommandEncoder =
                     device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+
+                // render scopes
+                scope_renderer.render(&mut encoder);
 
                 // clear screen
                 {
