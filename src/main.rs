@@ -5,6 +5,7 @@ mod audio;
 mod commands;
 mod config;
 mod panic;
+mod render;
 mod scope;
 mod state;
 mod ui;
