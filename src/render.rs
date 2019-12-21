@@ -1,3 +1,5 @@
+pub mod quad;
+
 pub struct Renderer {
     tex: wgpu::Texture,
 }
@@ -16,7 +18,7 @@ impl Renderer {
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format: wgpu::TextureFormat::Rgba8UnormSrgb,
-                usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT | wgpu::TextureUsage::COPY_SRC,
+                usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT | wgpu::TextureUsage::SAMPLED,
             }),
         }
     }
@@ -28,14 +30,13 @@ impl Renderer {
                 resolve_target: None,
                 load_op: wgpu::LoadOp::Clear,
                 store_op: wgpu::StoreOp::Store,
-                clear_color: wgpu::Color {
-                    r: 0.0,
-                    g: 0.0,
-                    b: 0.0,
-                    a: 1.0,
-                },
+                clear_color: wgpu::Color::BLACK,
             }],
             depth_stencil_attachment: None,
         });
+    }
+
+    pub fn texture_view(&self) -> wgpu::TextureView {
+        self.tex.create_default_view()
     }
 }

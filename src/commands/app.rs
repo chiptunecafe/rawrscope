@@ -152,6 +152,11 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
         imgui_wgpu::Renderer::new_static(&mut imgui, &device, &mut queue, swap_desc.format, None);
 
     let scope_renderer = crate::render::Renderer::new(&device);
+    let quad_renderer = crate::render::quad::QuadRenderer::new(
+        &device,
+        &scope_renderer.texture_view(),
+        swap_desc.format,
+    );
 
     // TODO remove hardcoded vars
     let framerate = 60u16;
@@ -282,6 +287,10 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                     });
                 }
 
+                // copy scopes to screen
+                quad_renderer.render(&mut encoder, &swap_frame.view);
+
+                // render ui
                 imgui_plat.prepare_render(&im_ui, &window);
                 imgui_renderer
                     .render(im_ui.render(), &device, &mut encoder, &swap_frame.view)
