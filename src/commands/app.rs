@@ -2,6 +2,7 @@ use std::io;
 use std::panic::{set_hook, take_hook};
 
 use snafu::{OptionExt, ResultExt, Snafu};
+use ultraviolet as uv;
 use winit::{
     event,
     event_loop::{ControlFlow, EventLoop},
@@ -57,6 +58,19 @@ fn load_state(state_file: Option<&str>) -> state::State {
             }
         },
         None => State::default(),
+    }
+}
+
+fn preview_transform(window_res: (u32, u32), scope_res: (u32, u32)) -> uv::Mat4 {
+    let window_ratio = window_res.0 as f32 / window_res.1 as f32;
+    let scope_ratio = scope_res.0 as f32 / scope_res.1 as f32;
+
+    if scope_ratio > window_ratio {
+        // letterbox
+        uv::Mat4::from_nonuniform_scale(uv::Vec4::new(1.0, window_ratio / scope_ratio, 1.0, 1.0))
+    } else {
+        // pillarbox
+        uv::Mat4::from_nonuniform_scale(uv::Vec4::new(scope_ratio / window_ratio, 1.0, 1.0, 1.0))
     }
 }
 
@@ -152,10 +166,17 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
         imgui_wgpu::Renderer::new_static(&mut imgui, &device, &mut queue, swap_desc.format, None);
 
     let scope_renderer = crate::render::Renderer::new(&device);
-    let quad_renderer = crate::render::quad::QuadRenderer::new(
+    let preview_renderer = crate::render::quad::QuadRenderer::new(
         &device,
         &scope_renderer.texture_view(),
         swap_desc.format,
+        preview_transform(
+            window
+                .inner_size()
+                .to_physical(window.hidpi_factor())
+                .into(),
+            (1920, 1080),
+        ),
     );
 
     // TODO remove hardcoded vars
@@ -179,6 +200,18 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                     swap_desc.height = window_size.height as u32;
 
                     swapchain = device.create_swap_chain(&surface, &swap_desc);
+
+                    preview_renderer.update_transform(
+                        &device,
+                        &mut queue,
+                        preview_transform(
+                            window
+                                .inner_size()
+                                .to_physical(window.hidpi_factor())
+                                .into(),
+                            (1920, 1080),
+                        ),
+                    );
                 }
                 _ => {}
             },
@@ -288,7 +321,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                 }
 
                 // copy scopes to screen
-                quad_renderer.render(&mut encoder, &swap_frame.view);
+                preview_renderer.render(&mut encoder, &swap_frame.view);
 
                 // render ui
                 imgui_plat.prepare_render(&im_ui, &window);

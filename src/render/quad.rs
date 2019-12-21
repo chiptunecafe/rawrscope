@@ -38,13 +38,13 @@ impl QuadRenderer {
         device: &wgpu::Device,
         tex_view: &wgpu::TextureView,
         color_format: wgpu::TextureFormat,
+        transform: uv::Mat4,
     ) -> Self {
         // create buffers
         let vertex_buf = device
             .create_buffer_mapped(4, wgpu::BufferUsage::VERTEX)
             .fill_from_slice(&QUAD_VERTS);
 
-        let transform = uv::Mat4::from_nonuniform_scale(uv::Vec4::new(0.5, 0.5, 1.0, 1.0));
         let transform_slice = transform.as_slice();
         let uniform_buf = device
             .create_buffer_mapped(
@@ -202,5 +202,30 @@ impl QuadRenderer {
         pass.set_vertex_buffers(0, &[(&self.vertex_buf, 0)]);
 
         pass.draw(0..4, 0..1);
+    }
+
+    pub fn update_transform(
+        &self,
+        device: &wgpu::Device,
+        queue: &mut wgpu::Queue,
+        transform: uv::Mat4,
+    ) {
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+
+        let transform_slice = transform.as_slice();
+        let staging_buf = device
+            .create_buffer_mapped(transform_slice.len(), wgpu::BufferUsage::COPY_SRC)
+            .fill_from_slice(transform_slice);
+
+        encoder.copy_buffer_to_buffer(
+            &staging_buf,
+            0,
+            &self.uniform_buf,
+            0,
+            (transform_slice.len() * 4) as u64,
+        );
+
+        queue.submit(&[encoder.finish()]);
     }
 }
