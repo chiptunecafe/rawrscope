@@ -84,6 +84,7 @@ impl State {
         let mut state: State = serde_yaml::from_reader(file).context(ParseError)?;
         state.file_path = path.to_path_buf();
 
+        // load audio sources
         warnings.extend(
             state
                 .audio_sources
@@ -91,6 +92,26 @@ impl State {
                 .filter_map(|s| s.load().err().map(Box::new))
                 .map(|b| b as Box<dyn std::error::Error>),
         );
+
+        // initialize scope mixers
+        for (scope_name, scope) in state.scopes.iter_mut() {
+            let sample_rates = state
+                .audio_sources
+                .iter_mut()
+                .filter(|source| {
+                    source.connections.iter().any(|conn| match &conn.target {
+                        audio::connection::ConnectionTarget::Scope { name, .. } => {
+                            name == scope_name
+                        }
+                        _ => false,
+                    })
+                })
+                .filter_map(|source| source.as_loaded())
+                .map(|loaded| loaded.spec().sample_rate)
+                .collect::<Vec<_>>();
+
+            scope.configure_mixer(sample_rates);
+        }
 
         Ok((state, warnings))
     }

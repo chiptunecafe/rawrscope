@@ -9,7 +9,7 @@ pub enum MasterChannel {
 #[derive(Deserialize, Serialize)]
 pub enum ConnectionTarget {
     Master { channel: MasterChannel },
-    Scope { name: String, port: String },
+    Scope { name: String, channel: u32 },
 }
 
 impl ConnectionTarget {
