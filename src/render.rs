@@ -2,6 +2,7 @@ pub mod quad;
 
 pub struct Renderer {
     tex: wgpu::Texture,
+    flick: bool,
 }
 
 impl Renderer {
@@ -20,20 +21,26 @@ impl Renderer {
                 format: wgpu::TextureFormat::Rgba8UnormSrgb,
                 usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT | wgpu::TextureUsage::SAMPLED,
             }),
+            flick: false,
         }
     }
 
-    pub fn render(&self, encoder: &mut wgpu::CommandEncoder) {
+    pub fn render(&mut self, encoder: &mut wgpu::CommandEncoder) {
         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
                 attachment: &self.tex.create_default_view(),
                 resolve_target: None,
                 load_op: wgpu::LoadOp::Clear,
                 store_op: wgpu::StoreOp::Store,
-                clear_color: wgpu::Color::BLACK,
+                clear_color: if self.flick {
+                    wgpu::Color::BLUE
+                } else {
+                    wgpu::Color::BLACK
+                },
             }],
             depth_stencil_attachment: None,
         });
+        self.flick = !self.flick;
     }
 
     pub fn texture_view(&self) -> wgpu::TextureView {

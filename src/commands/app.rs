@@ -1,5 +1,5 @@
-use std::io;
 use std::panic::{set_hook, take_hook};
+use std::{io, time};
 
 use snafu::{OptionExt, ResultExt, Snafu};
 use ultraviolet as uv;
@@ -112,7 +112,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
         format: wgpu::TextureFormat::Bgra8Unorm,
         width: window_size.width as u32,
         height: window_size.height as u32,
-        present_mode: wgpu::PresentMode::Vsync,
+        present_mode: wgpu::PresentMode::NoVsync,
     };
     let mut swapchain = device.create_swap_chain(&surface, &swap_desc);
 
@@ -165,7 +165,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     let mut imgui_renderer =
         imgui_wgpu::Renderer::new_static(&mut imgui, &device, &mut queue, swap_desc.format, None);
 
-    let scope_renderer = crate::render::Renderer::new(&device);
+    let mut scope_renderer = crate::render::Renderer::new(&device);
     let preview_renderer = crate::render::quad::QuadRenderer::new(
         &device,
         &scope_renderer.texture_view(),
@@ -179,11 +179,10 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
         ),
     );
 
-    // TODO remove hardcoded vars
-    let framerate = 60u16;
-    let frame_secs = 1.0 / f32::from(framerate);
-
-    let window_ms = 50;
+    let frame_secs = 1.0 / state.appearance.framerate as f32;
+    let frame_duration = time::Duration::from_secs_f32(frame_secs);
+    let mut timer = time::Instant::now();
+    let window_ms = 50; // TODO remove hardcode
 
     event_loop.run(move |event, _, control_flow| {
         let sub_builder = master.submission_builder(); // TODO optimize
@@ -218,88 +217,102 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
             event::Event::EventsCleared => {
                 *control_flow = ControlFlow::Poll;
 
-                // create audio submission
-                let mut sub = sub_builder.create(frame_secs);
+                // create encoder early
+                let mut encoder: wgpu::CommandEncoder =
+                    device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
 
-                let f = state.playback.frame;
-                let mut loaded_sources = state
-                    .audio_sources
-                    .iter_mut()
-                    .filter_map(|s| s.as_loaded())
-                    .collect::<Vec<_>>();
+                // update ui
+                imgui_plat
+                    .prepare_frame(imgui.io_mut(), &window)
+                    .expect("Failed to prepare UI rendering"); // TODO do not expect (need to figure out err handling in event loop)
 
-                let sources_exhausted = loaded_sources.iter().all(|source| {
-                    f > source.len() / (source.spec().sample_rate / u32::from(framerate))
-                });
+                let im_ui = imgui.frame();
+                crate::ui::ui(&mut state, &im_ui);
 
-                if !sources_exhausted && state.playback.playing {
-                    for source in &mut loaded_sources {
-                        let channels = source.spec().channels;
-                        let sample_rate = source.spec().sample_rate;
+                let now = time::Instant::now();
+                if now > timer {
+                    println!("{:?}", now.duration_since(timer));
+                    // create audio submission
+                    let mut sub = sub_builder.create(frame_secs);
 
-                        let window_len = sample_rate * window_ms / 1000 * u32::from(channels);
-                        let window_pos =
-                            (sample_rate / u32::from(framerate)) * state.playback.frame;
+                    let f = state.playback.frame;
+                    let framerate = state.appearance.framerate;
+                    let mut loaded_sources = state
+                        .audio_sources
+                        .iter_mut()
+                        .filter_map(|s| s.as_loaded())
+                        .collect::<Vec<_>>();
 
-                        // TODO dont panic
-                        let window = source
-                            .chunk_at(window_pos, window_len as usize)
-                            .unwrap()
-                            .iter()
-                            .copied()
-                            .collect::<Vec<_>>();
+                    let sources_exhausted = loaded_sources
+                        .iter()
+                        .all(|source| f > source.len() / (source.spec().sample_rate / framerate));
 
-                        let chunk_len = sub
-                            .length_of_channel(sample_rate)
-                            .expect("submission missing sample rate!")
-                            * channels as usize;
+                    if !sources_exhausted && state.playback.playing {
+                        for source in &mut loaded_sources {
+                            let channels = source.spec().channels;
+                            let sample_rate = source.spec().sample_rate;
 
-                        let chunk = &window[0..chunk_len.min(window.len())];
+                            let window_len = sample_rate * window_ms / 1000 * u32::from(channels);
+                            let window_pos = (sample_rate / framerate) * state.playback.frame;
 
-                        for conn in source.connections {
-                            let channel_iter = chunk
+                            // TODO dont panic
+                            let window = source
+                                .chunk_at(window_pos, window_len as usize)
+                                .unwrap()
                                 .iter()
-                                .skip(conn.channel as usize)
-                                .step_by(channels as usize)
-                                .copied();
-                            match conn.target {
-                                ConnectionTarget::Master { ref channel } => {
-                                    sub.add(
-                                        sample_rate,
-                                        match channel {
-                                            MasterChannel::Left => 0,
-                                            MasterChannel::Right => 1,
-                                        },
-                                        channel_iter,
-                                    );
+                                .copied()
+                                .collect::<Vec<_>>();
+
+                            let chunk_len = sub
+                                .length_of_channel(sample_rate)
+                                .expect("submission missing sample rate!")
+                                * channels as usize;
+
+                            let chunk = &window[0..chunk_len.min(window.len())];
+
+                            for conn in source.connections {
+                                let channel_iter = chunk
+                                    .iter()
+                                    .skip(conn.channel as usize)
+                                    .step_by(channels as usize)
+                                    .copied();
+                                match conn.target {
+                                    ConnectionTarget::Master { ref channel } => {
+                                        sub.add(
+                                            sample_rate,
+                                            match channel {
+                                                MasterChannel::Left => 0,
+                                                MasterChannel::Right => 1,
+                                            },
+                                            channel_iter,
+                                        );
+                                    }
+                                    _ => log::warn!("scope connections unimplemented"),
                                 }
-                                _ => log::warn!("scope connections unimplemented"),
                             }
                         }
+                    } else if sources_exhausted && state.playback.playing {
+                        state.playback.playing = false;
                     }
-                } else if sources_exhausted && state.playback.playing {
-                    state.playback.playing = false;
-                }
 
-                if let Err(e) = master.submit(sub) {
-                    log::error!("Failed to submit audio to master: {}", e);
+                    if let Err(e) = master.submit(sub) {
+                        log::error!("Failed to submit audio to master: {}", e);
+                    }
+
+                    // render scopes
+                    scope_renderer.render(&mut encoder);
+
+                    if state.playback.playing {
+                        state.playback.frame += 1;
+                    }
+
+                    // TODO do not allow timer to get too far behind
+                    // currently results in audio desync when lag occurs
+                    timer += frame_duration;
                 }
 
                 // begin rendering
                 let swap_frame = swapchain.get_next_texture();
-
-                imgui_plat
-                    .prepare_frame(imgui.io_mut(), &window)
-                    .expect("Failed to prepare UI rendering"); // TODO do not expect (need to figure out err handling in event loop)
-                let im_ui = imgui.frame();
-
-                crate::ui::ui(&mut state, &im_ui);
-
-                let mut encoder: wgpu::CommandEncoder =
-                    device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
-
-                // render scopes
-                scope_renderer.render(&mut encoder);
 
                 // clear screen
                 {
@@ -330,10 +343,6 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                     .expect("Failed to render UI"); // TODO do not expect
 
                 queue.submit(&[encoder.finish()]);
-
-                if state.playback.playing {
-                    state.playback.frame += 1;
-                }
             }
             _ => {}
         }

@@ -34,6 +34,8 @@ pub enum WriteError {
 #[derive(Derivative, Deserialize, Serialize)]
 #[derivative(Default)]
 pub struct GlobalAppearance {
+    #[derivative(Default(value = "60"))]
+    pub framerate: u32,
     #[derivative(Default(value = "1"))]
     pub grid_rows: u32,
     #[derivative(Default(value = "1"))]
@@ -57,6 +59,13 @@ pub struct PlaybackState {
     pub playing: bool,
 }
 
+#[derive(Derivative)]
+#[derivative(Default)]
+pub struct DebugState {
+    #[derivative(Default(value = "0f32"))]
+    pub sleep: f32,
+}
+
 #[derive(Default, Deserialize, Serialize)]
 pub struct State {
     pub audio_sources: Vec<audio::source::AudioSource>,
@@ -68,6 +77,9 @@ pub struct State {
 
     #[serde(skip)]
     pub playback: PlaybackState,
+
+    #[serde(skip)]
+    pub debug: DebugState,
 }
 
 impl State {
