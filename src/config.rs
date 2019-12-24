@@ -8,6 +8,7 @@ use snafu::{OptionExt, ResultExt, Snafu};
 pub struct Audio {
     pub host: Option<String>,
     pub device: Option<String>,
+    pub buffer_ms: Option<f32>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]

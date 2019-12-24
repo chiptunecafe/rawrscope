@@ -181,7 +181,9 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
 
     let frame_secs = 1.0 / state.appearance.framerate as f32;
     let frame_duration = time::Duration::from_secs_f32(frame_secs);
-    let mut timer = time::Instant::now();
+    let buffer_duration =
+        time::Duration::from_secs_f32(config.audio.buffer_ms.unwrap_or(10.0) / 1000.0); // TODO make defualt buffer size more clear to end user
+    let mut timer = time::Instant::now() - buffer_duration;
     let window_ms = 50; // TODO remove hardcode
 
     event_loop.run(move |event, _, control_flow| {
@@ -231,7 +233,6 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
 
                 let now = time::Instant::now();
                 if now > timer {
-                    println!("{:?}", now.duration_since(timer));
                     // create audio submission
                     let mut sub = sub_builder.create(frame_secs);
 
@@ -306,9 +307,10 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                         state.playback.frame += 1;
                     }
 
-                    // TODO do not allow timer to get too far behind
-                    // currently results in audio desync when lag occurs
                     timer += frame_duration;
+                    if now.saturating_duration_since(timer) > buffer_duration {
+                        timer = now - buffer_duration;
+                    }
                 }
 
                 // begin rendering
