@@ -1,6 +1,7 @@
 use std::panic::{set_hook, take_hook};
 use std::{io, time};
 
+use rayon::prelude::*;
 use snafu::{OptionExt, ResultExt, Snafu};
 use ultraviolet as uv;
 use winit::{
@@ -314,10 +315,10 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                             state.scopes.get_mut(&name).unwrap().submit(sub);
                         }
 
-                        // TODO rayon
-                        for (_, scope) in state.scopes.iter_mut() {
-                            scope.process()
-                        }
+                        state
+                            .scopes
+                            .par_iter_mut()
+                            .for_each(|(_, scope)| scope.process());
                     } else if sources_exhausted && state.playback.playing {
                         state.playback.playing = false;
                     }
