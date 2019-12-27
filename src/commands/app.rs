@@ -248,7 +248,15 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                         .iter()
                         .all(|source| f > source.len() / (source.spec().sample_rate / framerate));
 
+                    // if playing
                     if !sources_exhausted && state.playback.playing {
+                        // create scope submissions
+                        let mut scope_submissions = state
+                            .scopes
+                            .iter()
+                            .map(|(name, scope)| (name.clone(), scope.build_submission())) // TODO maybe avoid clone
+                            .collect::<std::collections::HashMap<_, _>>();
+
                         for source in &mut loaded_sources {
                             let channels = source.spec().channels;
                             let sample_rate = source.spec().sample_rate;
@@ -256,10 +264,9 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                             let window_len = sample_rate * window_ms / 1000 * u32::from(channels);
                             let window_pos = (sample_rate / framerate) * state.playback.frame;
 
-                            // TODO dont panic
                             let window = source
                                 .chunk_at(window_pos, window_len as usize)
-                                .unwrap()
+                                .unwrap() // safe - no sources should be exhausted
                                 .iter()
                                 .copied()
                                 .collect::<Vec<_>>();
@@ -288,9 +295,28 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                                             channel_iter,
                                         );
                                     }
-                                    _ => log::warn!("scope connections unimplemented"),
+                                    ConnectionTarget::Scope { ref name, channel } => {
+                                        if channel != 0 {
+                                            log::warn!("scope channels unimplemented!");
+                                        }
+                                        if let Some(sub) = scope_submissions.get_mut(name) {
+                                            sub.add(sample_rate, 0, channel_iter);
+                                        } else {
+                                            log::warn!("connection to undefined scope {}!", name);
+                                        }
+                                    }
                                 }
                             }
+                        }
+
+                        // submit and process scope audio
+                        for (name, sub) in scope_submissions.into_iter() {
+                            state.scopes.get_mut(&name).unwrap().submit(sub);
+                        }
+
+                        // TODO rayon
+                        for (_, scope) in state.scopes.iter_mut() {
+                            scope.process()
                         }
                     } else if sources_exhausted && state.playback.playing {
                         state.playback.playing = false;

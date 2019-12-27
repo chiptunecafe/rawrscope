@@ -46,6 +46,9 @@ pub struct Scope {
 
     #[serde(skip)]
     mixer: Option<mixer::Mixer<SubmissionSlot>>,
+
+    #[serde(skip)]
+    audio: Vec<f32>,
 }
 
 impl Scope {
@@ -66,7 +69,7 @@ impl Scope {
         self.mixer = Some(mixer_builder.build(SubmissionSlot::new(None)).unwrap());
     }
 
-    // TODO maybe dont panic on these two methods
+    // TODO maybe dont panic on these three methods
     pub fn build_submission(&self) -> mixer::Submission {
         self.mixer
             .as_ref()
@@ -82,5 +85,15 @@ impl Scope {
             .submission_queue()
             .submission()
             .replace(submission);
+    }
+
+    // centering happens here
+    pub fn process(&mut self) {
+        self.audio = self
+            .mixer
+            .as_mut()
+            .expect("scope mixer unconfigured")
+            .next()
+            .expect("attempted to process no audio!");
     }
 }
