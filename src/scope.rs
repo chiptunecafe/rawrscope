@@ -35,9 +35,9 @@ impl Iterator for SubmissionSlot {
     }
 }
 
+// TODO allow for multiple channels
 #[derive(Serialize, Deserialize)]
 pub struct Scope {
-    pub channels: usize,
     pub window_size: f32,
 
     // appearance
@@ -55,7 +55,7 @@ impl Scope {
 
     pub fn configure_mixer(&mut self, source_rates: Vec<u32>) {
         let mut mixer_builder = mixer::MixerBuilder::new();
-        mixer_builder.channels(self.channels);
+        mixer_builder.channels(1);
         mixer_builder.resample_type(samplerate::ConverterType::Linear);
 
         for &rate in &source_rates {
