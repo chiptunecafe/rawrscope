@@ -39,6 +39,8 @@ pub enum CreateError {
     StreamPlayError {
         source: failure::Compat<cpal::PlayStreamError>,
     },
+    #[snafu(display("Failed to start audio thread: {}", source))]
+    ThreadError { source: std::io::Error },
 }
 
 fn audio_host(config: &crate::config::Audio) -> cpal::Host {
@@ -114,18 +116,21 @@ pub struct Player {
 impl Player {
     pub fn new(config: &crate::config::Config) -> Result<Self, CreateError> {
         let config = config.audio.clone();
-        let (host, device, format) = thread::spawn(move || {
-            let host = audio_host(&config);
-            let device = audio_device(&config, &host)?;
-            let format = device
-                .default_output_format()
-                .map_err(|e| e.compat())
-                .context(NoOutputFormats)?;
-            Ok((host, device, format))
-        })
-        .join()
-        .ok()
-        .context(InitializationPanic)??;
+        let (host, device, format) = thread::Builder::new()
+            .name("audio init".into())
+            .spawn(move || {
+                let host = audio_host(&config);
+                let device = audio_device(&config, &host)?;
+                let format = device
+                    .default_output_format()
+                    .map_err(|e| e.compat())
+                    .context(NoOutputFormats)?;
+                Ok((host, device, format))
+            })
+            .context(ThreadError)?
+            .join()
+            .ok()
+            .context(InitializationPanic)??;
 
         let (submission_queue, sub_rx) = crossbeam_channel::bounded(0);
         let mut mixer_builder = mixer::MixerBuilder::new();
@@ -140,60 +145,63 @@ impl Player {
         log::debug!("Starting audio thread: format={:?}", format);
         let audio_stream = mixer_stream.clone();
         let thr_format = format.clone();
-        let audio_thread = thread::spawn(move || {
-            let ev = host.event_loop();
-            let res: Result<(), CreateError> = (move || {
-                let stream_id = ev
-                    .build_output_stream(&device, &thr_format)
-                    .map_err(|e| e.compat())
-                    .context(StreamCreateError)?;
+        let audio_thread = thread::Builder::new()
+            .name("audio playback".into())
+            .spawn(move || {
+                let ev = host.event_loop();
+                let res: Result<(), CreateError> = (move || {
+                    let stream_id = ev
+                        .build_output_stream(&device, &thr_format)
+                        .map_err(|e| e.compat())
+                        .context(StreamCreateError)?;
 
-                ev.play_stream(stream_id)
-                    .map_err(|e| e.compat())
-                    .context(StreamPlayError)?;
+                    ev.play_stream(stream_id)
+                        .map_err(|e| e.compat())
+                        .context(StreamPlayError)?;
 
-                ev.run(move |_stream_id, stream_res| {
-                    let stream_data = match stream_res {
-                        Ok(data) => data,
-                        Err(err) => {
-                            log::error!("Audio playback stream error: {}", err);
-                            return;
-                        }
-                    };
-
-                    let mut audio_stream = audio_stream.lock();
-
-                    match stream_data {
-                        cpal::StreamData::Output {
-                            buffer: UOut::U16(mut buffer),
-                        } => {
-                            for elem in buffer.iter_mut() {
-                                *elem = audio_stream.next().unwrap_or(0f32).to_sample();
+                    ev.run(move |_stream_id, stream_res| {
+                        let stream_data = match stream_res {
+                            Ok(data) => data,
+                            Err(err) => {
+                                log::error!("Audio playback stream error: {}", err);
+                                return;
                             }
-                        }
-                        cpal::StreamData::Output {
-                            buffer: UOut::I16(mut buffer),
-                        } => {
-                            for elem in buffer.iter_mut() {
-                                *elem = audio_stream.next().unwrap_or(0f32).to_sample();
-                            }
-                        }
-                        cpal::StreamData::Output {
-                            buffer: UOut::F32(mut buffer),
-                        } => {
-                            for elem in buffer.iter_mut() {
-                                *elem = audio_stream.next().unwrap_or(0f32);
-                            }
-                        }
-                        _ => (),
-                    }
-                });
-            })();
+                        };
 
-            if let Err(e) = res {
-                log::error!("Unexpected audio thread error! {}", e);
-            }
-        });
+                        let mut audio_stream = audio_stream.lock();
+
+                        match stream_data {
+                            cpal::StreamData::Output {
+                                buffer: UOut::U16(mut buffer),
+                            } => {
+                                for elem in buffer.iter_mut() {
+                                    *elem = audio_stream.next().unwrap_or(0f32).to_sample();
+                                }
+                            }
+                            cpal::StreamData::Output {
+                                buffer: UOut::I16(mut buffer),
+                            } => {
+                                for elem in buffer.iter_mut() {
+                                    *elem = audio_stream.next().unwrap_or(0f32).to_sample();
+                                }
+                            }
+                            cpal::StreamData::Output {
+                                buffer: UOut::F32(mut buffer),
+                            } => {
+                                for elem in buffer.iter_mut() {
+                                    *elem = audio_stream.next().unwrap_or(0f32);
+                                }
+                            }
+                            _ => (),
+                        }
+                    });
+                })();
+
+                if let Err(e) = res {
+                    log::error!("Unexpected audio thread error! {}", e);
+                }
+            })
+            .context(ThreadError)?;
 
         Ok(Player {
             _audio_thread: audio_thread,
