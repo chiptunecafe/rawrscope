@@ -103,7 +103,7 @@ fn audio_device(
     }
 }
 pub struct Player {
-    audio_thread: thread::JoinHandle<()>,
+    _audio_thread: thread::JoinHandle<()>,
     submission_builder: mixer::SubmissionBuilder,
     submission_queue: crossbeam_channel::Sender<mixer::Submission>,
     mixer_stream: Arc<Mutex<mixer::MixerStream<crossbeam_channel::IntoIter<mixer::Submission>>>>,
@@ -196,7 +196,7 @@ impl Player {
         });
 
         Ok(Player {
-            audio_thread,
+            _audio_thread: audio_thread,
             submission_builder,
             submission_queue,
             mixer_stream,
