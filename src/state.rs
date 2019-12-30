@@ -64,6 +64,7 @@ pub struct PlaybackState {
 pub struct DebugState {
     #[derivative(Default(value = "0f32"))]
     pub sleep: f32,
+    pub stutter_test: bool,
 }
 
 #[derive(Default, Deserialize, Serialize)]

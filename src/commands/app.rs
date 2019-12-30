@@ -328,7 +328,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                     }
 
                     // render scopes
-                    scope_renderer.render(&mut encoder);
+                    scope_renderer.render(&mut encoder, &state);
 
                     if state.playback.playing {
                         state.playback.frame += 1;

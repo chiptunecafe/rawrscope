@@ -39,12 +39,15 @@ pub fn ui<'a, 'ui>(state: &'a mut State, ui: &'a Ui<'ui>) {
     });
 
     imgui::Window::new(im_str!("Debug Tools"))
-        .size([300.0, 50.0], imgui::Condition::Always)
+        .size([200.0, 80.0], imgui::Condition::Always)
         .resizable(false)
         .build(&ui, || {
             imgui::Slider::new(im_str!("lag"), 0.0..=50.0).build(&ui, &mut state.debug.sleep);
+            ui.checkbox(im_str!("Stutter Test"), &mut state.debug.stutter_test);
         });
-    std::thread::sleep(std::time::Duration::from_secs_f32(
-        state.debug.sleep / 1000.0,
-    ));
+    if state.debug.sleep > 0f32 {
+        std::thread::sleep(std::time::Duration::from_secs_f32(
+            state.debug.sleep / 1000.0,
+        ));
+    }
 }

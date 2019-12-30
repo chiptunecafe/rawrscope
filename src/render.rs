@@ -25,14 +25,14 @@ impl Renderer {
         }
     }
 
-    pub fn render(&mut self, encoder: &mut wgpu::CommandEncoder) {
+    pub fn render(&mut self, encoder: &mut wgpu::CommandEncoder, state: &crate::state::State) {
         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
                 attachment: &self.tex.create_default_view(),
                 resolve_target: None,
                 load_op: wgpu::LoadOp::Clear,
                 store_op: wgpu::StoreOp::Store,
-                clear_color: if self.flick {
+                clear_color: if self.flick && state.debug.stutter_test {
                     wgpu::Color::BLUE
                 } else {
                     wgpu::Color::BLACK
