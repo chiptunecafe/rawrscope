@@ -1,5 +1,4 @@
 #![windows_subsystem = "windows"]
-#![feature(proc_macro_hygiene)]
 
 mod args;
 mod audio;
