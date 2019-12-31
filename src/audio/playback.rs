@@ -5,17 +5,11 @@ use cpal::{
     traits::{DeviceTrait, EventLoopTrait, HostTrait},
     UnknownTypeOutputBuffer as UOut,
 };
-use failure::Fail;
 use parking_lot::Mutex;
 use sample::Sample;
 use snafu::{OptionExt, ResultExt, Snafu};
 
 use crate::audio::mixer;
-
-// cpal only impls failure::Fail on its errors
-// meaning that i have to add failure as a dependency
-// just for compat with std::error::Error
-// rree
 
 #[derive(Debug, Snafu)]
 pub enum CreateError {
@@ -26,19 +20,17 @@ pub enum CreateError {
     InitializationPanic,
 
     #[snafu(display("Failed to get output format for device: {}", source))]
-    NoOutputFormats {
-        source: failure::Compat<cpal::DefaultFormatError>,
-    },
+    NoOutputFormats { source: cpal::DefaultFormatError },
+
     #[snafu(display("Could not create mixer: {}", source))]
     MixerError { source: samplerate::Error },
+
     #[snafu(display("Failed to initialize audio output stream: {}", source))]
-    StreamCreateError {
-        source: failure::Compat<cpal::BuildStreamError>,
-    },
+    StreamCreateError { source: cpal::BuildStreamError },
+
     #[snafu(display("Failed to start audio output stream: {}", source))]
-    StreamPlayError {
-        source: failure::Compat<cpal::PlayStreamError>,
-    },
+    StreamPlayError { source: cpal::PlayStreamError },
+
     #[snafu(display("Failed to start audio thread: {}", source))]
     ThreadError { source: std::io::Error },
 }
@@ -121,10 +113,7 @@ impl Player {
             .spawn(move || {
                 let host = audio_host(&config);
                 let device = audio_device(&config, &host)?;
-                let format = device
-                    .default_output_format()
-                    .map_err(|e| e.compat())
-                    .context(NoOutputFormats)?;
+                let format = device.default_output_format().context(NoOutputFormats)?;
                 Ok((host, device, format))
             })
             .context(ThreadError)?
@@ -152,12 +141,9 @@ impl Player {
                 let res: Result<(), CreateError> = (move || {
                     let stream_id = ev
                         .build_output_stream(&device, &thr_format)
-                        .map_err(|e| e.compat())
                         .context(StreamCreateError)?;
 
-                    ev.play_stream(stream_id)
-                        .map_err(|e| e.compat())
-                        .context(StreamPlayError)?;
+                    ev.play_stream(stream_id).context(StreamPlayError)?;
 
                     ev.run(move |_stream_id, stream_res| {
                         let stream_data = match stream_res {
