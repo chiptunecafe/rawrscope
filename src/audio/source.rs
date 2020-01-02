@@ -115,7 +115,7 @@ impl<'a> AsLoaded<'a> {
         len: u32,
         in_len: Option<f32>,
         out_len: Option<f32>,
-    ) -> impl Fn((usize, Result<f32, ReadError>)) -> Result<f32, ReadError> {
+    ) -> impl Fn((usize, Result<f32, hound::Error>)) -> Result<f32, hound::Error> {
         move |(idx, samp)| {
             let len = len * u32::from(spec.channels);
             let idx = (idx + reader_pos as usize) / spec.channels as usize * spec.channels as usize;
@@ -149,7 +149,7 @@ impl<'a> AsLoaded<'a> {
                     let samples = self.wav_reader.samples();
                     samples
                         .take(len)
-                        .map(|v| v.context(DecodeError).map(i8::to_sample))
+                        .map(|v| v.map(i8::to_sample))
                         .enumerate()
                         .map(Self::fade(
                             spec,
@@ -158,13 +158,14 @@ impl<'a> AsLoaded<'a> {
                             self.fade_in,
                             self.fade_out,
                         ))
-                        .collect()
+                        .collect::<Result<Vec<f32>, hound::Error>>()
+                        .context(DecodeError)
                 }
                 16 => {
                     let samples = self.wav_reader.samples();
                     samples
                         .take(len)
-                        .map(|v| v.context(DecodeError).map(i16::to_sample))
+                        .map(|v| v.map(i16::to_sample))
                         .enumerate()
                         .map(Self::fade(
                             spec,
@@ -173,17 +174,14 @@ impl<'a> AsLoaded<'a> {
                             self.fade_in,
                             self.fade_out,
                         ))
-                        .collect()
+                        .collect::<Result<Vec<f32>, hound::Error>>()
+                        .context(DecodeError)
                 }
                 24 => {
                     let samples = self.wav_reader.samples::<i32>();
                     samples
                         .take(len)
-                        .map(|v| {
-                            v.context(DecodeError)
-                                .map(I24::new_unchecked)
-                                .map(I24::to_sample)
-                        })
+                        .map(|v| v.map(I24::new_unchecked).map(I24::to_sample))
                         .enumerate()
                         .map(Self::fade(
                             spec,
@@ -192,7 +190,8 @@ impl<'a> AsLoaded<'a> {
                             self.fade_in,
                             self.fade_out,
                         ))
-                        .collect()
+                        .collect::<Result<Vec<f32>, hound::Error>>()
+                        .context(DecodeError)
                 }
                 v => Err(ReadError::UnsupportedDepth { depth: v }),
             },
@@ -201,7 +200,6 @@ impl<'a> AsLoaded<'a> {
                     let samples = self.wav_reader.samples();
                     samples
                         .take(len)
-                        .map(|v| v.context(DecodeError))
                         .enumerate()
                         .map(Self::fade(
                             spec,
@@ -210,7 +208,8 @@ impl<'a> AsLoaded<'a> {
                             self.fade_in,
                             self.fade_out,
                         ))
-                        .collect()
+                        .collect::<Result<Vec<f32>, hound::Error>>()
+                        .context(DecodeError)
                 }
                 v => Err(ReadError::UnsupportedDepth { depth: v }),
             },
