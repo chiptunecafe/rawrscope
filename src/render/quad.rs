@@ -186,14 +186,23 @@ impl QuadRenderer {
         }
     }
 
-    pub fn render(&self, encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView) {
+    pub fn render(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        target: &wgpu::TextureView,
+        clear: Option<wgpu::Color>,
+    ) {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
                 attachment: target,
                 resolve_target: None,
-                load_op: wgpu::LoadOp::Load,
+                load_op: if clear.is_some() {
+                    wgpu::LoadOp::Clear
+                } else {
+                    wgpu::LoadOp::Load
+                },
                 store_op: wgpu::StoreOp::Store,
-                clear_color: wgpu::Color::BLACK,
+                clear_color: clear.unwrap_or(wgpu::Color::BLACK),
             }],
             depth_stencil_attachment: None,
         });

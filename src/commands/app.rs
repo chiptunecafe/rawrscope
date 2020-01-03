@@ -363,7 +363,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                 }
 
                 // copy scopes to screen
-                preview_renderer.render(&mut encoder, &swap_frame.view);
+                preview_renderer.render(&mut encoder, &swap_frame.view, None);
 
                 // render ui
                 imgui_plat.prepare_render(&im_ui, &window);
