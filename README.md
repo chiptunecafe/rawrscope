@@ -17,8 +17,8 @@ toolchain.*
 \* = unimplemented
 
 * \*Intuitive interface
-* \*Realtime editor and preview
-* \*Antialiased, GPU accelerated line rendering
+* Realtime editor and preview
+* Antialiased, GPU accelerated line rendering
 * Many centering algorithms
   * \*Peak Speed
   * \*Fundamental Phase

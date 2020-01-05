@@ -96,4 +96,8 @@ impl Scope {
             .next()
             .expect("attempted to process no audio!");
     }
+
+    pub fn output(&self) -> &[f32] {
+        &self.audio
+    }
 }

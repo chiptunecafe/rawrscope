@@ -277,10 +277,17 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                                 .expect("submission missing sample rate!")
                                 * channels as usize;
 
-                            let chunk = &window[0..chunk_len.min(window.len())];
+                            // TODO refactor this!!!
+                            let playback_chunk = &window[0..chunk_len.min(window.len())];
+                            let scope_chunk = &window[0..window.len()];
 
                             for conn in source.connections {
-                                let channel_iter = chunk
+                                let playback_channel_iter = playback_chunk
+                                    .iter()
+                                    .skip(conn.channel as usize)
+                                    .step_by(channels as usize)
+                                    .copied();
+                                let scope_channel_iter = scope_chunk
                                     .iter()
                                     .skip(conn.channel as usize)
                                     .step_by(channels as usize)
@@ -293,7 +300,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                                                 MasterChannel::Left => 0,
                                                 MasterChannel::Right => 1,
                                             },
-                                            channel_iter,
+                                            playback_channel_iter,
                                         );
                                     }
                                     ConnectionTarget::Scope { ref name, channel } => {
@@ -301,7 +308,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                                             log::warn!("scope channels unimplemented!");
                                         }
                                         if let Some(sub) = scope_submissions.get_mut(name) {
-                                            sub.add(sample_rate, 0, channel_iter);
+                                            sub.add(sample_rate, 0, scope_channel_iter);
                                         } else {
                                             log::warn!("connection to undefined scope {}!", name);
                                         }
@@ -328,7 +335,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                     }
 
                     // render scopes
-                    scope_renderer.render(&mut encoder, &state);
+                    scope_renderer.render(&device, &mut encoder, &state);
 
                     if state.playback.playing {
                         state.playback.frame += 1;
