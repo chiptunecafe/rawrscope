@@ -1,4 +1,5 @@
 use ultraviolet as uv;
+use vk_shader_macros::include_glsl;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -67,18 +68,8 @@ impl QuadRenderer {
         });
 
         // load shaders
-        let vs_module = device.create_shader_module(
-            &wgpu::read_spirv(std::io::Cursor::new(
-                &include_bytes!("../../shaders/quad.vert.spv")[..],
-            ))
-            .unwrap(),
-        );
-        let fs_module = device.create_shader_module(
-            &wgpu::read_spirv(std::io::Cursor::new(
-                &include_bytes!("../../shaders/quad.frag.spv")[..],
-            ))
-            .unwrap(),
-        );
+        let vs_module = device.create_shader_module(include_glsl!("shaders/quad.vert"));
+        let fs_module = device.create_shader_module(include_glsl!("shaders/quad.frag"));
 
         // create pipeline layout
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {

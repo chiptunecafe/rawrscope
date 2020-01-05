@@ -30,6 +30,7 @@ snafu = "0.6.0"
 tinyfiledialogs = "3.3.6"
 toml = "0.5.1"
 ultraviolet = "0.4.5"
+vk-shader-macros = "0.2.2"
 winit = "0.20.0-alpha5"
 wgpu = "0.4.0"
 

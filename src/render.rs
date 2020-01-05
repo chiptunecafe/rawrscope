@@ -1,6 +1,7 @@
 pub mod quad;
 
 use ultraviolet as uv;
+use vk_shader_macros::include_glsl;
 
 // TODO: scuffed alignment; seems to work but its too big somehow
 #[repr(C, align(16))]
@@ -60,18 +61,8 @@ impl Renderer {
             usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT | wgpu::TextureUsage::SAMPLED,
         });
 
-        let line_vs = device.create_shader_module(
-            &wgpu::read_spirv(std::io::Cursor::new(
-                &include_bytes!("../shaders/line.vert.spv")[..],
-            ))
-            .unwrap(),
-        );
-        let line_fs = device.create_shader_module(
-            &wgpu::read_spirv(std::io::Cursor::new(
-                &include_bytes!("../shaders/line.frag.spv")[..],
-            ))
-            .unwrap(),
-        );
+        let line_vs = device.create_shader_module(include_glsl!("shaders/line.vert"));
+        let line_fs = device.create_shader_module(include_glsl!("shaders/line.frag"));
 
         let line_ssbo_bind_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
