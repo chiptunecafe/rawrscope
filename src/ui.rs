@@ -38,16 +38,15 @@ pub fn ui<'a, 'ui>(state: &'a mut State, ui: &'a Ui<'ui>) {
         }
     });
 
-    imgui::Window::new(im_str!("Debug Tools"))
-        .size([200.0, 80.0], imgui::Condition::Always)
+    imgui::Window::new(im_str!("Experimental Options"))
+        .size([250.0, 100.0], imgui::Condition::Always)
         .resizable(false)
         .build(&ui, || {
-            imgui::Slider::new(im_str!("lag"), 0.0..=50.0).build(&ui, &mut state.debug.sleep);
+            ui.checkbox(im_str!("Throttle Frames"), &mut state.debug.throttle_frames);
+            ui.checkbox(
+                im_str!("Multithreaded Centering"),
+                &mut state.debug.multithreaded_centering,
+            );
             ui.checkbox(im_str!("Stutter Test"), &mut state.debug.stutter_test);
         });
-    if state.debug.sleep > 0f32 {
-        std::thread::sleep(std::time::Duration::from_secs_f32(
-            state.debug.sleep / 1000.0,
-        ));
-    }
 }

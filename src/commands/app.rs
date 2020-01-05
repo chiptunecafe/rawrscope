@@ -185,6 +185,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     let buffer_duration =
         time::Duration::from_secs_f32(config.audio.buffer_ms.unwrap_or(10.0) / 1000.0); // TODO make defualt buffer size more clear to end user
     let mut timer = time::Instant::now() - buffer_duration;
+    let mut frame_timer = time::Instant::now();
     let window_ms = 50; // TODO remove hardcode
 
     event_loop.run(move |event, _, control_flow| {
@@ -322,10 +323,17 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                             state.scopes.get_mut(&name).unwrap().submit(sub);
                         }
 
-                        state
-                            .scopes
-                            .par_iter_mut()
-                            .for_each(|(_, scope)| scope.process());
+                        if state.debug.multithreaded_centering {
+                            state
+                                .scopes
+                                .par_iter_mut()
+                                .for_each(|(_, scope)| scope.process());
+                        } else {
+                            state
+                                .scopes
+                                .iter_mut()
+                                .for_each(|(_, scope)| scope.process());
+                        }
                     } else if sources_exhausted && state.playback.playing {
                         state.playback.playing = false;
                     }
@@ -379,6 +387,21 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                     .expect("Failed to render UI"); // TODO do not expect
 
                 queue.submit(&[encoder.finish()]);
+
+                // throttle frames if enabled
+                let frametime = frame_timer.elapsed();
+
+                if state.debug.throttle_frames {
+                    // TODO do not hardcode for 60fps displays
+                    let sleep_time = time::Duration::from_secs_f32(1.0 / 60.0)
+                        .checked_sub(frametime)
+                        .and_then(|t| t.checked_sub(time::Duration::from_millis(1)));
+                    if let Some(t) = sleep_time {
+                        std::thread::sleep(t);
+                    }
+                }
+
+                frame_timer = time::Instant::now();
             }
             _ => {}
         }

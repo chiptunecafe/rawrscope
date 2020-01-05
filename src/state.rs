@@ -62,9 +62,11 @@ pub struct PlaybackState {
 #[derive(Derivative)]
 #[derivative(Default)]
 pub struct DebugState {
-    #[derivative(Default(value = "0f32"))]
-    pub sleep: f32,
     pub stutter_test: bool,
+    #[derivative(Default(value = "true"))]
+    pub throttle_frames: bool,
+    #[derivative(Default(value = "true"))]
+    pub multithreaded_centering: bool,
 }
 
 #[derive(Default, Deserialize, Serialize)]
