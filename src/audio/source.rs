@@ -117,22 +117,18 @@ impl<'a> AsLoaded<'a> {
         out_len: Option<f32>,
     ) -> impl Fn((usize, Result<f32, hound::Error>)) -> Result<f32, hound::Error> {
         move |(idx, samp)| {
-            let len = len * u32::from(spec.channels);
-            let idx = (idx + reader_pos as usize) / spec.channels as usize * spec.channels as usize;
             let mut s = samp?;
 
-            let in_samps = in_len.map(|v| (v * spec.sample_rate as f32) as usize);
-            let out_samps = out_len.map(|v| (v * spec.sample_rate as f32) as usize);
+            let len = len * u32::from(spec.channels);
+            let idx = (idx + reader_pos as usize) / spec.channels as usize * spec.channels as usize;
 
-            match in_samps {
-                Some(l) if idx < l => s *= idx as f32 / l as f32,
-                _ => (),
-            }
+            let in_samps = (in_len.unwrap_or(0.0) * spec.sample_rate as f32) as usize;
+            let out_samps = (out_len.unwrap_or(0.0) * spec.sample_rate as f32) as usize;
 
-            match out_samps {
-                Some(l) if (len as usize - idx) < l => s *= (len as usize - idx) as f32 / l as f32,
-                _ => (),
-            }
+            s *= (idx as f32 / in_samps as f32).max(0.0).min(1.0);
+            s *= ((len as usize - idx) as f32 / out_samps as f32)
+                .max(0.0)
+                .min(1.0);
 
             Ok(s)
         }
