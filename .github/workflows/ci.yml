@@ -16,7 +16,7 @@ jobs:
       run: sudo apt-get install libasound2-dev
     - name: Install Windows dependencies
       if: matrix.os == 'windows-latest'
-      run: choco install llvm
+      run: choco install llvm ninja
     - name: Cache cargo registry
       uses: actions/cache@v1
       with:
@@ -49,7 +49,7 @@ jobs:
       run: sudo apt-get install libasound2-dev
     - name: Install Windows dependencies
       if: matrix.os == 'windows-latest'
-      run: choco install llvm
+      run: choco install llvm ninja
     - name: Cache cargo registry
       uses: actions/cache@v1
       with:
