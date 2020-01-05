@@ -67,6 +67,7 @@ pub struct DebugState {
     pub throttle_frames: bool,
     #[derivative(Default(value = "true"))]
     pub multithreaded_centering: bool,
+    pub frametime: std::time::Duration,
 }
 
 #[derive(Default, Deserialize, Serialize)]

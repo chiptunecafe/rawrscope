@@ -13,6 +13,7 @@ pub fn ui<'a, 'ui>(state: &'a mut State, ui: &'a Ui<'ui>) {
         // Status
         ui.text(im_str!("Playing: {}", state.playback.playing));
         ui.text(im_str!("Frame: {}", state.playback.frame));
+        ui.text(im_str!("CPU Time: {:?}", state.debug.frametime));
 
         // Playback controls
         if ui.small_button(im_str!("Play/Pause")) {

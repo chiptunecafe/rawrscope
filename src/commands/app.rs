@@ -219,6 +219,8 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                 _ => {}
             },
             event::Event::EventsCleared => {
+                frame_timer = time::Instant::now();
+
                 *control_flow = ControlFlow::Poll;
 
                 // create encoder early
@@ -388,9 +390,11 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
 
                 queue.submit(&[encoder.finish()]);
 
-                // throttle frames if enabled
+                // write frametime to state
                 let frametime = frame_timer.elapsed();
+                state.debug.frametime = frametime;
 
+                // throttle frames if enabled
                 if state.debug.throttle_frames {
                     // TODO do not hardcode for 60fps displays
                     let sleep_time = time::Duration::from_secs_f32(1.0 / 60.0)
@@ -400,8 +404,6 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                         std::thread::sleep(t);
                     }
                 }
-
-                frame_timer = time::Instant::now();
             }
             _ => {}
         }
