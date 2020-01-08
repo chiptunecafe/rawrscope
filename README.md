@@ -46,7 +46,7 @@ extract the archive.
 
 ### From source
 
-Clone the repository and run `cargo +nightly build --profile deploy`.
+Clone the repository and run `cargo +nightly build -Z unstable-options --profile deploy`.
 
 CMake and Python are required for building dependencies.
 
