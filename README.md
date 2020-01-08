@@ -37,7 +37,23 @@ toolchain.*
 
 ## Installation
 
-*TODO*
+### From CI
+
+View the CI runs [here](https://github.com/chiptunecafe/rawrscope/actions) (**must
+be logged into GitHub to view**), select the latest successful run, and download
+the appropriate ZIP file from the "Artifacts" tab in the top right. Then, just
+extract the archive.
+
+### From source
+
+Clone the repository and run `cargo +nightly build --profile deploy`.
+
+CMake and Python are required for building dependencies.
+
+The deploy profile strips away all debuginformation and enables LTO, whereas the release
+profile does not enable LTO and retains debugging symbols. The default dev profile
+should only be used for testing if things will compile since the optimizations that are
+applied in the other profiles are necessary for acceptable performance.
 
 ## Tutorial
 
