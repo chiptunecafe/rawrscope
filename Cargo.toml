@@ -36,7 +36,7 @@ wgpu = "0.4.0"
 
 [patch.crates-io]
 libsamplerate-sys = { git = "https://github.com/rytone/libsamplerate-sys" }
-shaderc = { git = "https://github.com/EmbarkStudios/shaderc-rs", branch = "static-crt" }
+shaderc = { git = "https://github.com/google/shaderc-rs" }
 
 [profile.release]
 debug = true
