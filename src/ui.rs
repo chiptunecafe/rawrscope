@@ -7,13 +7,12 @@ pub fn ui<'a, 'ui>(state: &'a mut State, ui: &'a Ui<'ui>) {
         clap::crate_version!(),
         git_version::git_version!()
     ))
-    .size([300.0, 120.0], imgui::Condition::Always)
+    .size([300.0, 110.0], imgui::Condition::Always)
     .resizable(false)
     .build(&ui, || {
         // Status
         ui.text(im_str!("Playing: {}", state.playback.playing));
         ui.text(im_str!("Frame: {}", state.playback.frame));
-        ui.text(im_str!("CPU Time: {:?}", state.debug.frametime));
 
         // Playback controls
         if ui.small_button(im_str!("Play/Pause")) {
@@ -40,7 +39,7 @@ pub fn ui<'a, 'ui>(state: &'a mut State, ui: &'a Ui<'ui>) {
     });
 
     imgui::Window::new(im_str!("Experimental Options"))
-        .size([250.0, 100.0], imgui::Condition::Always)
+        .size([250.0, 290.0], imgui::Condition::Always)
         .resizable(false)
         .build(&ui, || {
             ui.checkbox(
@@ -48,5 +47,14 @@ pub fn ui<'a, 'ui>(state: &'a mut State, ui: &'a Ui<'ui>) {
                 &mut state.debug.multithreaded_centering,
             );
             ui.checkbox(im_str!("Stutter Test"), &mut state.debug.stutter_test);
+
+            let (ft_left, ft_right) = state.debug.frametimes.as_slices();
+            let frametimes = [ft_left, ft_right].concat();
+            imgui::PlotLines::new(&ui, &im_str!(""), &frametimes)
+                .scale_min(0.0)
+                .scale_max(50.0)
+                .graph_size([234.0, 200.0])
+                .overlay_text(&im_str!("Frametime (0-50ms)"))
+                .build();
         });
 }

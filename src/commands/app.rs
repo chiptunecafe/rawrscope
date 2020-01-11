@@ -228,8 +228,6 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                 _ => {}
             },
             event::Event::EventsCleared => {
-                frame_timer = time::Instant::now();
-
                 *control_flow = ControlFlow::Poll;
 
                 // create encoder early
@@ -408,8 +406,14 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                     queue.submit(&[encoder.finish()]);
 
                     // write frametime to state
-                    let frametime = frame_timer.elapsed();
-                    state.debug.frametime = frametime;
+                    state
+                        .debug
+                        .frametimes
+                        .push_back(frame_timer.elapsed().as_secs_f32() * 1000.0);
+                    if state.debug.frametimes.len() > 200 {
+                        state.debug.frametimes.pop_front();
+                    }
+                    frame_timer = time::Instant::now();
                 } else {
                     // prevent cpu from burning BUT lowers framerate a bit
                     *control_flow = ControlFlow::WaitUntil(present_timer);

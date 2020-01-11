@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -65,7 +65,7 @@ pub struct DebugState {
     pub stutter_test: bool,
     #[derivative(Default(value = "true"))]
     pub multithreaded_centering: bool,
-    pub frametime: std::time::Duration,
+    pub frametimes: VecDeque<f32>,
 }
 
 #[derive(Default, Deserialize, Serialize)]
