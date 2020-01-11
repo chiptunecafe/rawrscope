@@ -64,8 +64,6 @@ pub struct PlaybackState {
 pub struct DebugState {
     pub stutter_test: bool,
     #[derivative(Default(value = "true"))]
-    pub throttle_frames: bool,
-    #[derivative(Default(value = "true"))]
     pub multithreaded_centering: bool,
     pub frametime: std::time::Duration,
 }

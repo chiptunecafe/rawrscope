@@ -43,7 +43,6 @@ pub fn ui<'a, 'ui>(state: &'a mut State, ui: &'a Ui<'ui>) {
         .size([250.0, 100.0], imgui::Condition::Always)
         .resizable(false)
         .build(&ui, || {
-            ui.checkbox(im_str!("Throttle Frames"), &mut state.debug.throttle_frames);
             ui.checkbox(
                 im_str!("Multithreaded Centering"),
                 &mut state.debug.multithreaded_centering,

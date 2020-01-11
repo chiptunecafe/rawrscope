@@ -180,10 +180,20 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
         ),
     );
 
-    let frame_secs = 1.0 / state.appearance.framerate as f32;
-    let frame_duration = time::Duration::from_secs_f32(frame_secs);
     let buffer_duration = time::Duration::from_secs_f32(config.audio.buffer_ms / 1000.0);
-    let mut timer = time::Instant::now() - buffer_duration;
+
+    let scope_frame_secs = 1.0 / state.appearance.framerate as f32;
+    let scope_frame_duration = time::Duration::from_secs_f32(scope_frame_secs);
+    let mut scope_timer = time::Instant::now() - buffer_duration;
+
+    let present_frame_secs = if config.video.framerate_limit > 0.0 {
+        1.0 / config.video.framerate_limit
+    } else {
+        0.0
+    };
+    let present_frame_duration = time::Duration::from_secs_f32(present_frame_secs);
+    let mut present_timer = time::Instant::now();
+
     let mut frame_timer = time::Instant::now();
     let window_ms = 50; // TODO remove hardcode
 
@@ -234,10 +244,13 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                 let im_ui = imgui.frame();
                 crate::ui::ui(&mut state, &im_ui);
 
+                let mut scopes_updated = false;
                 let now = time::Instant::now();
-                if now > timer {
+                if now > scope_timer {
+                    scopes_updated = true;
+
                     // create audio submission
-                    let mut sub = sub_builder.create(frame_secs);
+                    let mut sub = sub_builder.create(scope_frame_secs);
 
                     let f = state.playback.frame;
                     let framerate = state.appearance.framerate;
@@ -350,58 +363,56 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                         state.playback.frame += 1;
                     }
 
-                    timer += frame_duration;
-                    if now.saturating_duration_since(timer) > buffer_duration {
-                        timer = now - buffer_duration;
+                    scope_timer += scope_frame_duration;
+                    if now.saturating_duration_since(scope_timer) > buffer_duration {
+                        scope_timer = now - buffer_duration;
                     }
                 }
 
-                // begin rendering
-                let swap_frame = swapchain.get_next_texture();
+                let now = time::Instant::now();
+                // always present new scope frames
+                if now > present_timer || scopes_updated {
+                    present_timer = now + present_frame_duration;
 
-                // clear screen
-                {
-                    encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                            attachment: &swap_frame.view,
-                            resolve_target: None,
-                            load_op: wgpu::LoadOp::Clear,
-                            store_op: wgpu::StoreOp::Store,
-                            clear_color: wgpu::Color {
-                                r: 0.3,
-                                g: 0.3,
-                                b: 0.3,
-                                a: 1.0,
-                            },
-                        }],
-                        depth_stencil_attachment: None,
-                    });
-                }
+                    // begin rendering
+                    let swap_frame = swapchain.get_next_texture();
 
-                // copy scopes to screen
-                preview_renderer.render(&mut encoder, &swap_frame.view, None);
-
-                // render ui
-                imgui_plat.prepare_render(&im_ui, &window);
-                imgui_renderer
-                    .render(im_ui.render(), &device, &mut encoder, &swap_frame.view)
-                    .expect("Failed to render UI"); // TODO do not expect
-
-                queue.submit(&[encoder.finish()]);
-
-                // write frametime to state
-                let frametime = frame_timer.elapsed();
-                state.debug.frametime = frametime;
-
-                // throttle frames if enabled
-                if state.debug.throttle_frames {
-                    // TODO do not hardcode for 60fps displays
-                    let sleep_time = time::Duration::from_secs_f32(1.0 / 60.0)
-                        .checked_sub(frametime)
-                        .and_then(|t| t.checked_sub(time::Duration::from_millis(1)));
-                    if let Some(t) = sleep_time {
-                        std::thread::sleep(t);
+                    // clear screen
+                    {
+                        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                            color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
+                                attachment: &swap_frame.view,
+                                resolve_target: None,
+                                load_op: wgpu::LoadOp::Clear,
+                                store_op: wgpu::StoreOp::Store,
+                                clear_color: wgpu::Color {
+                                    r: 0.3,
+                                    g: 0.3,
+                                    b: 0.3,
+                                    a: 1.0,
+                                },
+                            }],
+                            depth_stencil_attachment: None,
+                        });
                     }
+
+                    // copy scopes to screen
+                    preview_renderer.render(&mut encoder, &swap_frame.view, None);
+
+                    // render ui
+                    imgui_plat.prepare_render(&im_ui, &window);
+                    imgui_renderer
+                        .render(im_ui.render(), &device, &mut encoder, &swap_frame.view)
+                        .expect("Failed to render UI"); // TODO do not expect
+
+                    queue.submit(&[encoder.finish()]);
+
+                    // write frametime to state
+                    let frametime = frame_timer.elapsed();
+                    state.debug.frametime = frametime;
+                } else {
+                    // prevent cpu from burning BUT lowers framerate a bit
+                    *control_flow = ControlFlow::WaitUntil(present_timer);
                 }
             }
             _ => {}

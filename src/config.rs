@@ -15,10 +15,19 @@ pub struct Audio {
     pub buffer_ms: f32,
 }
 
+#[derive(Clone, Debug, Derivative, Deserialize, Serialize)]
+#[derivative(Default)]
+#[serde(default)]
+pub struct Video {
+    #[derivative(Default(value = "150.0"))]
+    pub framerate_limit: f32,
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Config {
     pub audio: Audio,
+    pub video: Video,
 }
 
 #[derive(Debug, Snafu)]
