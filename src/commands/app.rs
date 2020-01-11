@@ -182,8 +182,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
 
     let frame_secs = 1.0 / state.appearance.framerate as f32;
     let frame_duration = time::Duration::from_secs_f32(frame_secs);
-    let buffer_duration =
-        time::Duration::from_secs_f32(config.audio.buffer_ms.unwrap_or(10.0) / 1000.0); // TODO make defualt buffer size more clear to end user
+    let buffer_duration = time::Duration::from_secs_f32(config.audio.buffer_ms / 1000.0);
     let mut timer = time::Instant::now() - buffer_duration;
     let mut frame_timer = time::Instant::now();
     let window_ms = 50; // TODO remove hardcode

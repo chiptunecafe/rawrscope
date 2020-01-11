@@ -1,17 +1,22 @@
 use std::fs;
 use std::io::{self, Read, Write};
 
+use derivative::Derivative;
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, ResultExt, Snafu};
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Derivative, Deserialize, Serialize)]
+#[derivative(Default)]
+#[serde(default)]
 pub struct Audio {
     pub host: Option<String>,
     pub device: Option<String>,
-    pub buffer_ms: Option<f32>,
+    #[derivative(Default(value = "10.0"))]
+    pub buffer_ms: f32,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(default)]
 pub struct Config {
     pub audio: Audio,
 }
