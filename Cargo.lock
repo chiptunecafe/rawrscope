@@ -1332,7 +1332,7 @@ dependencies = [
 [[package]]
 name = "rayon"
 version = "1.2.0"
-source = "git+https://github.com/nikomatsakis/rayon?branch=latch-target-thread#bc73d198699ebec7180a2840682db3a2e82e7b90"
+source = "git+https://github.com/nikomatsakis/rayon?branch=latch-target-thread#b2d0565ff800d69d866bd89f91b13cab3cb1b69f"
 dependencies = [
  "crossbeam-deque 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "either 1.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1342,7 +1342,7 @@ dependencies = [
 [[package]]
 name = "rayon-core"
 version = "1.6.0"
-source = "git+https://github.com/nikomatsakis/rayon?branch=latch-target-thread#bc73d198699ebec7180a2840682db3a2e82e7b90"
+source = "git+https://github.com/nikomatsakis/rayon?branch=latch-target-thread#b2d0565ff800d69d866bd89f91b13cab3cb1b69f"
 dependencies = [
  "crossbeam-channel 0.3.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "crossbeam-deque 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
