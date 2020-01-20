@@ -1,9 +1,22 @@
 use crate::state::State;
+
 use imgui::{im_str, Ui};
+use tinyfiledialogs as tfd;
 
 pub fn ui<'a, 'ui>(state: &'a mut State, ui: &'a Ui<'ui>) {
     ui.main_menu_bar(|| {
         ui.menu(im_str!("File"), true, || {
+            if imgui::MenuItem::new(&im_str!("Open")).build(ui) {
+                if let Some(path) = tfd::open_file_dialog(
+                    "Open Project...",
+                    ".",
+                    Some((&["*.rprj"], "rawrscope projects")),
+                ) {
+                    // TODO do not panic and log warnings
+                    *state = State::from_file(path).expect("could not load project").0;
+                }
+            }
+
             if imgui::MenuItem::new(&im_str!("Save"))
                 .enabled(state.file_path.as_os_str().len() != 0)
                 .build(ui)
