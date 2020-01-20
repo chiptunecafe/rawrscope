@@ -2,12 +2,26 @@ use crate::state::State;
 use imgui::{im_str, Ui};
 
 pub fn ui<'a, 'ui>(state: &'a mut State, ui: &'a Ui<'ui>) {
+    ui.main_menu_bar(|| {
+        ui.menu(im_str!("File"), true, || {
+            if imgui::MenuItem::new(&im_str!("Save"))
+                .enabled(state.file_path.as_os_str().len() != 0)
+                .build(ui)
+            {
+                // TODO do not panic
+                state
+                    .write(&state.file_path)
+                    .expect("could not save project");
+            }
+        });
+    });
+
     imgui::Window::new(&im_str!(
         "rawrscope {} ({})",
         clap::crate_version!(),
         git_version::git_version!()
     ))
-    .size([300.0, 110.0], imgui::Condition::Always)
+    .size([300.0, 90.0], imgui::Condition::Always)
     .resizable(false)
     .build(&ui, || {
         // Status
@@ -25,16 +39,6 @@ pub fn ui<'a, 'ui>(state: &'a mut State, ui: &'a Ui<'ui>) {
         ui.same_line(0.0);
         if ui.small_button(im_str!("-100 frames")) {
             state.playback.frame = state.playback.frame.saturating_sub(100);
-        }
-
-        ui.separator();
-
-        // Save project
-        if ui.small_button(im_str!("Save project")) {
-            // TODO do not panic
-            state
-                .write(&state.file_path)
-                .expect("could not save project");
         }
     });
 
