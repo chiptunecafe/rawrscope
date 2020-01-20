@@ -43,7 +43,7 @@ pub fn ui<'a, 'ui>(state: &'a mut State, ui: &'a Ui<'ui>) {
     });
 
     imgui::Window::new(im_str!("Experimental Options"))
-        .size([250.0, 290.0], imgui::Condition::Always)
+        .size([250.0, 190.0], imgui::Condition::Always)
         .resizable(false)
         .build(&ui, || {
             ui.checkbox(
@@ -56,9 +56,9 @@ pub fn ui<'a, 'ui>(state: &'a mut State, ui: &'a Ui<'ui>) {
             let frametimes = [ft_left, ft_right].concat();
             imgui::PlotLines::new(&ui, &im_str!(""), &frametimes)
                 .scale_min(0.0)
-                .scale_max(50.0)
-                .graph_size([234.0, 200.0])
-                .overlay_text(&im_str!("Frametime (0-50ms)"))
+                .scale_max(20.0)
+                .graph_size([234.0, 100.0])
+                .overlay_text(&im_str!("Frametime (0-20ms)"))
                 .build();
         });
 }
