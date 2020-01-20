@@ -195,7 +195,6 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     let mut present_timer = time::Instant::now();
 
     let mut frame_timer = time::Instant::now();
-    let window_ms = 50; // TODO remove hardcode
 
     event_loop.run(move |event, _, control_flow| {
         let sub_builder = master.submission_builder(); // TODO optimize
@@ -258,6 +257,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                         .filter_map(|s| s.as_loaded())
                         .collect::<Vec<_>>();
 
+                    // TODO this is scuffed
                     let sources_exhausted = loaded_sources
                         .iter()
                         .all(|source| f > source.len() / (source.spec().sample_rate / framerate));
@@ -271,11 +271,20 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                             .map(|(name, scope)| (name.clone(), scope.build_submission())) // TODO maybe avoid clone
                             .collect::<std::collections::HashMap<_, _>>();
 
+                        let window_secs = state
+                            .scopes
+                            .iter()
+                            .map(|(_, s)| s.wanted_length())
+                            .max_by(|a, b| a.partial_cmp(b).unwrap()) // time shouldnt be NaN
+                            .unwrap_or(0.0)
+                            .max(scope_frame_secs);
+
                         for source in &mut loaded_sources {
                             let channels = source.spec().channels;
                             let sample_rate = source.spec().sample_rate;
 
-                            let window_len = sample_rate * window_ms / 1000 * u32::from(channels);
+                            let window_len =
+                                (sample_rate as f32 * window_secs * f32::from(channels)) as u32;
                             let window_pos = (sample_rate / framerate) * state.playback.frame;
 
                             let window = source
@@ -285,26 +294,13 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                                 .copied()
                                 .collect::<Vec<_>>();
 
-                            let chunk_len = sub
-                                .length_of_channel(sample_rate)
-                                .expect("submission missing sample rate!")
-                                * channels as usize;
-
-                            // TODO refactor this!!!
-                            let playback_chunk = &window[0..chunk_len.min(window.len())];
-                            let scope_chunk = &window[0..window.len()];
-
                             for conn in source.connections {
-                                let playback_channel_iter = playback_chunk
+                                let iter = window
                                     .iter()
                                     .skip(conn.channel as usize)
                                     .step_by(channels as usize)
                                     .copied();
-                                let scope_channel_iter = scope_chunk
-                                    .iter()
-                                    .skip(conn.channel as usize)
-                                    .step_by(channels as usize)
-                                    .copied();
+
                                 match conn.target {
                                     ConnectionTarget::Master { ref channel } => {
                                         sub.add(
@@ -313,7 +309,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                                                 MasterChannel::Left => 0,
                                                 MasterChannel::Right => 1,
                                             },
-                                            playback_channel_iter,
+                                            iter,
                                         );
                                     }
                                     ConnectionTarget::Scope { ref name, channel } => {
@@ -321,7 +317,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                                             log::warn!("scope channels unimplemented!");
                                         }
                                         if let Some(sub) = scope_submissions.get_mut(name) {
-                                            sub.add(sample_rate, 0, scope_channel_iter);
+                                            sub.add(sample_rate, 0, iter);
                                         } else {
                                             log::warn!("connection to undefined scope {}!", name);
                                         }
