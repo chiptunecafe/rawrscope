@@ -10,7 +10,7 @@ struct SubmissionSlot {
 
 impl SubmissionSlot {
     pub fn new(inner: Option<mixer::Submission>) -> Self {
-        SubmissionSlot { inner }
+        Self { inner }
     }
 
     pub fn submission(&mut self) -> &mut Option<mixer::Submission> {

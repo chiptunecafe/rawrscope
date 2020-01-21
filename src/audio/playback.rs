@@ -189,7 +189,7 @@ impl Player {
             })
             .context(ThreadError)?;
 
-        Ok(Player {
+        Ok(Self {
             _audio_thread: audio_thread,
             submission_builder,
             submission_queue,

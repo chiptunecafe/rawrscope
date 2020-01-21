@@ -1,17 +1,9 @@
 #![windows_subsystem = "windows"]
 
-mod args;
-mod audio;
-mod commands;
-mod config;
-mod panic;
-mod render;
-mod scope;
-mod state;
-mod ui;
+use rawrscope::*;
 
 fn main() {
-    let matches = args::get().get_matches();
+    let matches = args_get().get_matches();
 
     let colors = fern::colors::ColoredLevelConfig::new();
     let level_filter = match matches.occurrences_of("VERBOSE") {
@@ -35,8 +27,8 @@ fn main() {
         .expect("could not initialize logging"); // TODO dont panic?
 
     match matches.subcommand_name() {
-        None => commands::app::run(matches.value_of("PROJECT")),
-        Some("configure_audio") => commands::configure_audio::run(),
+        None => app::run(matches.value_of("PROJECT")),
+        Some("configure_audio") => configure_audio::run(),
         _ => unimplemented!(),
     }
 }

@@ -68,7 +68,7 @@ pub struct MixerBuilder {
 
 impl MixerBuilder {
     pub fn new() -> Self {
-        MixerBuilder {
+        Self {
             channels: 1,
             sample_rate: None,
             conv_type: samplerate::ConverterType::SincFastest,
