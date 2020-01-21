@@ -1,6 +1,6 @@
 use clap::{clap_app, crate_version, AppSettings};
 
-pub fn get() -> clap::App<'static, 'static> {
+pub fn args_get() -> clap::App<'static, 'static> {
     clap_app!(rawrscope =>
         (global_setting: AppSettings::DisableHelpSubcommand)
         (global_setting: AppSettings::VersionlessSubcommands)
