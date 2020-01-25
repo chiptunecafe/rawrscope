@@ -17,6 +17,7 @@ use crate::audio::{
 use crate::config;
 use crate::panic;
 use crate::state::{self, State};
+use crate::ui;
 
 // Errors are usually used when the app should quit
 #[derive(Debug, Snafu)]
@@ -75,6 +76,28 @@ fn preview_transform(window_res: (u32, u32), scope_res: (u32, u32)) -> uv::Mat4 
     }
 }
 
+fn rebuild_master(
+    master: &mut playback::Player,
+    state: &mut State,
+) -> Result<(), samplerate::Error> {
+    let mut mixer_config = mixer::MixerBuilder::new();
+    mixer_config.channels(master.channels() as usize);
+    mixer_config.target_sample_rate(master.sample_rate());
+
+    for source in state.audio_sources.iter_mut().filter_map(|s| s.as_loaded()) {
+        if source
+            .connections
+            .iter()
+            .any(|conn| conn.target.is_master())
+        {
+            let sample_rate = source.spec().sample_rate;
+            mixer_config.source_rate(sample_rate);
+        }
+    }
+
+    master.rebuild_mixer(mixer_config)
+}
+
 fn _run(state_file: Option<&str>) -> Result<(), Error> {
     set_hook(panic::dialog(take_hook()));
 
@@ -120,22 +143,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     // create and configure master player
     let mut master = playback::Player::new(&config).context(MasterCreation)?;
 
-    let mut mixer_config = mixer::MixerBuilder::new();
-    mixer_config.channels(master.channels() as usize);
-    mixer_config.target_sample_rate(master.sample_rate());
-
-    for source in state.audio_sources.iter_mut().filter_map(|s| s.as_loaded()) {
-        if source
-            .connections
-            .iter()
-            .any(|conn| conn.target.is_master())
-        {
-            let sample_rate = source.spec().sample_rate;
-            mixer_config.source_rate(sample_rate);
-        }
-    }
-
-    if let Err(e) = master.rebuild_mixer(mixer_config) {
+    if let Err(e) = rebuild_master(&mut master, &mut state) {
         log::warn!("Failed to rebuild master mixer: {}", e);
     }
 
@@ -197,8 +205,6 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     let mut frame_timer = time::Instant::now();
 
     event_loop.run(move |event, _, control_flow| {
-        let sub_builder = master.submission_builder(); // TODO optimize
-
         imgui_plat.handle_event(imgui.io_mut(), &window, &event);
 
         match event {
@@ -239,8 +245,17 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                     .expect("Failed to prepare UI rendering"); // TODO do not expect (need to figure out err handling in event loop)
 
                 let im_ui = imgui.frame();
-                crate::ui::ui(&mut state, &im_ui);
+                let mut ext_events = ui::ExternalEvents::default();
+                ui::ui(&mut state, &im_ui, &mut ext_events);
 
+                // process external events
+                if ext_events.contains(ui::ExternalEvents::REBUILD_MASTER) {
+                    if let Err(e) = rebuild_master(&mut master, &mut state) {
+                        log::warn!("Failed to rebuild master mixer: {}", e);
+                    }
+                }
+
+                let sub_builder = master.submission_builder(); // TODO optimize
                 let mut scopes_updated = false;
                 let now = time::Instant::now();
                 if now > scope_timer {

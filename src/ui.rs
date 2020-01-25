@@ -1,9 +1,18 @@
 use crate::state::State;
 
+use bitflags::bitflags;
 use imgui::{im_str, Ui};
 use tinyfiledialogs as tfd;
 
-pub fn ui<'a, 'ui>(state: &'a mut State, ui: &'a Ui<'ui>) {
+bitflags! {
+    #[derive(Default)]
+    pub struct ExternalEvents: u32 {
+        const REBUILD_MASTER = 0b00000001;
+        const REDRAW_SCOPES = 0b00000010;
+    }
+}
+
+pub fn ui<'a, 'ui>(state: &'a mut State, ui: &'a Ui<'ui>, ext_events: &'a mut ExternalEvents) {
     ui.main_menu_bar(|| {
         ui.menu(im_str!("File"), true, || {
             if imgui::MenuItem::new(&im_str!("Open")).build(ui) {
@@ -14,6 +23,7 @@ pub fn ui<'a, 'ui>(state: &'a mut State, ui: &'a Ui<'ui>) {
                 ) {
                     // TODO do not panic and log warnings
                     *state = State::from_file(path).expect("could not load project").0;
+                    *ext_events |= ExternalEvents::REBUILD_MASTER;
                 }
             }
 
