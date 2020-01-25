@@ -3,7 +3,7 @@ cargo-features = ["named-profiles"]
 [package]
 name = "rawrscope"
 version = "0.1.0"
-authors = ["rytone <rytonemail@gmail.com>"]
+authors = ["rytone <max@ryt.one>"]
 edition = "2018"
 license = "GPL-3.0-or-later"
 
