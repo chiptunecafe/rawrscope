@@ -23,7 +23,7 @@ pub fn ui<'a, 'ui>(state: &'a mut State, ui: &'a Ui<'ui>, ext_events: &'a mut Ex
                 ) {
                     // TODO do not panic and log warnings
                     *state = State::from_file(path).expect("could not load project").0;
-                    *ext_events |= ExternalEvents::REBUILD_MASTER;
+                    *ext_events |= ExternalEvents::REBUILD_MASTER | ExternalEvents::REDRAW_SCOPES;
                 }
             }
 
