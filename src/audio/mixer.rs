@@ -152,6 +152,10 @@ impl<I: Iterator<Item = Submission>> Mixer<I> {
     pub fn into_stream(self) -> MixerStream<I> {
         self.flatten()
     }
+
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
 }
 
 impl<I: Iterator<Item = Submission>> Iterator for Mixer<I> {

@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 use crate::audio::mixer;
 use crate::state::GridRect;
 
+pub mod centering;
+use centering::Algorithm;
+
 // custom impl of std::option::IntoIter in order to expose inner value
 struct SubmissionSlot {
     inner: Option<mixer::Submission>,
@@ -44,16 +47,21 @@ pub struct Scope {
     pub line_width: f32,
     pub rect: GridRect,
 
+    pub centering: centering::Centering,
+
     #[serde(skip)]
     mixer: Option<mixer::Mixer<SubmissionSlot>>,
 
     #[serde(skip)]
     audio: Vec<f32>,
+
+    #[serde(skip)]
+    center_offset: usize,
 }
 
 impl Scope {
     pub fn wanted_length(&self) -> f32 {
-        self.window_size
+        self.window_size + self.centering.lookahead()
     }
 
     pub fn configure_mixer(&mut self, source_rates: Vec<u32>) {
@@ -89,15 +97,24 @@ impl Scope {
 
     // centering happens here
     pub fn process(&mut self) {
-        self.audio = self
-            .mixer
-            .as_mut()
-            .expect("scope mixer unconfigured")
-            .next()
-            .expect("attempted to process no audio!");
+        let mixer = self.mixer.as_mut().expect("scope mixer unconfigured");
+        let sample_rate = mixer.sample_rate();
+        let output_size = (sample_rate as f32 * self.window_size) as usize;
+
+        self.audio = mixer.next().expect("attempted to process no audio!");
+        self.center_offset = self
+            .centering
+            .calculate_offset(&self.audio, sample_rate, output_size);
     }
 
     pub fn output(&self) -> &[f32] {
-        &self.audio
+        let output_size = (self
+            .mixer
+            .as_ref()
+            .expect("scope mixer unconfigured")
+            .sample_rate() as f32
+            * self.window_size) as usize;
+
+        &self.audio[0 + self.center_offset..output_size + self.center_offset]
     }
 }
