@@ -436,8 +436,6 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                 } else {
                     // prevent cpu from burning BUT lowers framerate a bit
                     *control_flow = ControlFlow::WaitUntil(present_timer);
-                    // submit queue anyway
-                    queue.submit(&[encoder.finish()]);
                 }
             }
             _ => {}
