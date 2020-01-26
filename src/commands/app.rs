@@ -203,6 +203,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     let mut present_timer = time::Instant::now();
 
     let mut frame_timer = time::Instant::now();
+    let mut reprocess = true;
 
     event_loop.run(move |event, _, control_flow| {
         imgui_plat.handle_event(imgui.io_mut(), &window, &event);
@@ -254,6 +255,9 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                         log::warn!("Failed to rebuild master mixer: {}", e);
                     }
                 }
+                if ext_events.contains(ui::ExternalEvents::REDRAW_SCOPES) {
+                    reprocess = true;
+                }
 
                 let sub_builder = master.submission_builder(); // TODO optimize
                 let mut scopes_updated = false;
@@ -277,8 +281,9 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                         .iter()
                         .all(|source| f > source.len() / (source.spec().sample_rate / framerate));
 
-                    // if playing
-                    if !sources_exhausted && state.playback.playing {
+                    // if audio needs to be processed
+                    if !sources_exhausted && state.playback.playing || reprocess {
+                        reprocess = false;
                         // create scope submissions
                         let mut scope_submissions = state
                             .scopes
@@ -318,14 +323,17 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
 
                                 match conn.target {
                                     ConnectionTarget::Master { ref channel } => {
-                                        sub.add(
-                                            sample_rate,
-                                            match channel {
-                                                MasterChannel::Left => 0,
-                                                MasterChannel::Right => 1,
-                                            },
-                                            iter,
-                                        );
+                                        // only submit master when playing
+                                        if state.playback.playing {
+                                            sub.add(
+                                                sample_rate,
+                                                match channel {
+                                                    MasterChannel::Left => 0,
+                                                    MasterChannel::Right => 1,
+                                                },
+                                                iter,
+                                            );
+                                        }
                                     }
                                     ConnectionTarget::Scope { ref name, channel } => {
                                         if channel != 0 {
@@ -428,6 +436,8 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                 } else {
                     // prevent cpu from burning BUT lowers framerate a bit
                     *control_flow = ControlFlow::WaitUntil(present_timer);
+                    // submit queue anyway
+                    queue.submit(&[encoder.finish()]);
                 }
             }
             _ => {}

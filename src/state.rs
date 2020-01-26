@@ -55,7 +55,7 @@ pub struct GridRect {
 #[derivative(Default)]
 pub struct PlaybackState {
     pub frame: u32,
-    #[derivative(Default(value = "true"))]
+    #[derivative(Default(value = "false"))]
     pub playing: bool,
 }
 

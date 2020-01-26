@@ -58,10 +58,12 @@ pub fn ui<'a, 'ui>(state: &'a mut State, ui: &'a Ui<'ui>, ext_events: &'a mut Ex
         ui.same_line(0.0);
         if ui.small_button(im_str!("+100 frames")) {
             state.playback.frame = state.playback.frame.saturating_add(100);
+            *ext_events |= ExternalEvents::REDRAW_SCOPES;
         }
         ui.same_line(0.0);
         if ui.small_button(im_str!("-100 frames")) {
             state.playback.frame = state.playback.frame.saturating_sub(100);
+            *ext_events |= ExternalEvents::REDRAW_SCOPES;
         }
     });
 

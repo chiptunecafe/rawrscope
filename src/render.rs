@@ -230,7 +230,7 @@ impl Renderer {
         }
 
         // update line ssbo
-        if line_data.len() == self.line_data_length {
+        if line_data.len() == self.line_data_length && line_data.len() > 1 {
             // create staging buffer
             let copy_buffer = device
                 .create_buffer_mapped(line_data.len(), wgpu::BufferUsage::COPY_SRC)
@@ -243,8 +243,7 @@ impl Renderer {
                 0,
                 (line_data.len() * 4) as u64,
             );
-        } else {
-            // TODO will crash with empty line data
+        } else if line_data.len() > 1 {
             log::info!(
                 "resizing line ssbo ({} -> {})",
                 self.line_data_length,
@@ -276,45 +275,47 @@ impl Renderer {
             self.line_data_length = line_data.len();
         }
 
-        // render lines (each line has to be a separate pass :/)
-        {
-            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                    attachment: &self.line_texture.create_default_view(),
-                    resolve_target: None,
-                    load_op: wgpu::LoadOp::Clear,
-                    store_op: wgpu::StoreOp::Store,
-                    clear_color: wgpu::Color::TRANSPARENT,
-                }],
-                depth_stencil_attachment: None,
-            });
-        }
-        for render_data in line_render_data.into_iter() {
-            encoder.copy_buffer_to_buffer(
-                &render_data.uniform_staging,
-                0,
-                &self.line_uniform,
-                0,
-                std::mem::size_of::<Uniforms>() as u64,
-            );
+        if self.line_data_length > 1 {
+            // render lines (each line has to be a separate pass :/)
+            {
+                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
+                        attachment: &self.line_texture.create_default_view(),
+                        resolve_target: None,
+                        load_op: wgpu::LoadOp::Clear,
+                        store_op: wgpu::StoreOp::Store,
+                        clear_color: wgpu::Color::TRANSPARENT,
+                    }],
+                    depth_stencil_attachment: None,
+                });
+            }
+            for render_data in line_render_data.into_iter() {
+                encoder.copy_buffer_to_buffer(
+                    &render_data.uniform_staging,
+                    0,
+                    &self.line_uniform,
+                    0,
+                    std::mem::size_of::<Uniforms>() as u64,
+                );
 
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                    attachment: &self.line_texture.create_default_view(),
-                    resolve_target: None,
-                    load_op: wgpu::LoadOp::Load,
-                    store_op: wgpu::StoreOp::Store,
-                    clear_color: wgpu::Color::BLACK,
-                }],
-                depth_stencil_attachment: None,
-            });
-            pass.set_pipeline(&self.line_pipeline);
-            pass.set_bind_group(0, &self.line_ssbo_bind, &[]);
-            pass.set_bind_group(1, &self.line_uniform_bind, &[]);
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
+                        attachment: &self.line_texture.create_default_view(),
+                        resolve_target: None,
+                        load_op: wgpu::LoadOp::Load,
+                        store_op: wgpu::StoreOp::Store,
+                        clear_color: wgpu::Color::BLACK,
+                    }],
+                    depth_stencil_attachment: None,
+                });
+                pass.set_pipeline(&self.line_pipeline);
+                pass.set_bind_group(0, &self.line_ssbo_bind, &[]);
+                pass.set_bind_group(1, &self.line_uniform_bind, &[]);
 
-            let begin = render_data.data_range.start * 6;
-            let end = (render_data.data_range.end - 2) * 6;
-            pass.draw(begin..end, 0..1);
+                let begin = render_data.data_range.start * 6;
+                let end = (render_data.data_range.end - 2) * 6;
+                pass.draw(begin..end, 0..1);
+            }
         }
 
         // copy lines to output texture
