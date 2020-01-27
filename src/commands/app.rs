@@ -194,19 +194,34 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     let scope_frame_duration = time::Duration::from_secs_f32(scope_frame_secs);
     let mut scope_timer = time::Instant::now() - buffer_duration;
 
-    let present_frame_secs = if config.video.framerate_limit > 0.0 {
-        1.0 / config.video.framerate_limit
-    } else {
-        0.0
-    };
-    let present_frame_duration = time::Duration::from_secs_f32(present_frame_secs);
-    let mut present_timer = time::Instant::now();
-
     let mut frame_timer = time::Instant::now();
+
     let mut reprocess = true;
+    let mut command_buffers: Vec<wgpu::CommandBuffer> = Vec::new();
 
     event_loop.run(move |event, _, control_flow| {
         imgui_plat.handle_event(imgui.io_mut(), &window, &event);
+
+        // update ui
+        imgui_plat
+            .prepare_frame(imgui.io_mut(), &window)
+            .expect("Failed to prepare UI rendering"); // TODO do not expect (need to figure out err handling in event loop)
+
+        let im_ui = imgui.frame();
+        let mut ext_events = ui::ExternalEvents::default();
+        ui::ui(&mut state, &im_ui, &mut ext_events);
+
+        // process external events
+        if ext_events.contains(ui::ExternalEvents::REBUILD_MASTER) {
+            if let Err(e) = rebuild_master(&mut master, &mut state) {
+                log::warn!("Failed to rebuild master mixer: {}", e);
+            }
+        }
+        if ext_events.contains(ui::ExternalEvents::REDRAW_SCOPES) {
+            reprocess = true;
+        }
+
+        *control_flow = ControlFlow::WaitUntil(scope_timer);
 
         match event {
             event::Event::WindowEvent { event, .. } => match event {
@@ -231,167 +246,14 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                         ),
                     );
                 }
-                _ => {}
-            },
-            event::Event::EventsCleared => {
-                *control_flow = ControlFlow::Poll;
-
-                // create encoder early
-                let mut encoder: wgpu::CommandEncoder =
-                    device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
-
-                // update ui
-                imgui_plat
-                    .prepare_frame(imgui.io_mut(), &window)
-                    .expect("Failed to prepare UI rendering"); // TODO do not expect (need to figure out err handling in event loop)
-
-                let im_ui = imgui.frame();
-                let mut ext_events = ui::ExternalEvents::default();
-                ui::ui(&mut state, &im_ui, &mut ext_events);
-
-                // process external events
-                if ext_events.contains(ui::ExternalEvents::REBUILD_MASTER) {
-                    if let Err(e) = rebuild_master(&mut master, &mut state) {
-                        log::warn!("Failed to rebuild master mixer: {}", e);
-                    }
-                }
-                if ext_events.contains(ui::ExternalEvents::REDRAW_SCOPES) {
-                    reprocess = true;
-                }
-
-                let sub_builder = master.submission_builder(); // TODO optimize
-                let mut scopes_updated = false;
-                let now = time::Instant::now();
-                if now > scope_timer {
-                    scopes_updated = true;
-
-                    // create audio submission
-                    let mut sub = sub_builder.create(scope_frame_secs);
-
-                    let f = state.playback.frame;
-                    let framerate = state.appearance.framerate;
-                    let mut loaded_sources = state
-                        .audio_sources
-                        .iter_mut()
-                        .filter_map(|s| s.as_loaded())
-                        .collect::<Vec<_>>();
-
-                    // TODO this is scuffed
-                    let sources_exhausted = loaded_sources
-                        .iter()
-                        .all(|source| f > source.len() / (source.spec().sample_rate / framerate));
-
-                    // if audio needs to be processed
-                    if !sources_exhausted && state.playback.playing || reprocess {
-                        reprocess = false;
-                        // create scope submissions
-                        let mut scope_submissions = state
-                            .scopes
-                            .iter()
-                            .map(|(name, scope)| (name.clone(), scope.build_submission())) // TODO maybe avoid clone
-                            .collect::<std::collections::HashMap<_, _>>();
-
-                        let window_secs = state
-                            .scopes
-                            .iter()
-                            .map(|(_, s)| s.wanted_length())
-                            .max_by(|a, b| a.partial_cmp(b).unwrap()) // time shouldnt be NaN
-                            .unwrap_or(0.0)
-                            .max(scope_frame_secs);
-
-                        for source in &mut loaded_sources {
-                            let channels = source.spec().channels;
-                            let sample_rate = source.spec().sample_rate;
-
-                            let window_len =
-                                (sample_rate as f32 * window_secs * f32::from(channels)) as u32;
-                            let window_pos = (sample_rate / framerate) * state.playback.frame;
-
-                            let window = source
-                                .chunk_at(window_pos, window_len as usize)
-                                .unwrap() // safe - no sources should be exhausted
-                                .iter()
-                                .copied()
-                                .collect::<Vec<_>>();
-
-                            for conn in source.connections {
-                                let iter = window
-                                    .iter()
-                                    .skip(conn.channel as usize)
-                                    .step_by(channels as usize)
-                                    .copied();
-
-                                match conn.target {
-                                    ConnectionTarget::Master { ref channel } => {
-                                        // only submit master when playing
-                                        if state.playback.playing {
-                                            sub.add(
-                                                sample_rate,
-                                                match channel {
-                                                    MasterChannel::Left => 0,
-                                                    MasterChannel::Right => 1,
-                                                },
-                                                iter,
-                                            );
-                                        }
-                                    }
-                                    ConnectionTarget::Scope { ref name, channel } => {
-                                        if channel != 0 {
-                                            log::warn!("scope channels unimplemented!");
-                                        }
-                                        if let Some(sub) = scope_submissions.get_mut(name) {
-                                            sub.add(sample_rate, 0, iter);
-                                        } else {
-                                            log::warn!("connection to undefined scope {}!", name);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // submit and process scope audio
-                        for (name, sub) in scope_submissions.into_iter() {
-                            state.scopes.get_mut(&name).unwrap().submit(sub);
-                        }
-
-                        if state.debug.multithreaded_centering {
-                            state
-                                .scopes
-                                .par_iter_mut()
-                                .for_each(|(_, scope)| scope.process());
-                        } else {
-                            state
-                                .scopes
-                                .iter_mut()
-                                .for_each(|(_, scope)| scope.process());
-                        }
-                    } else if sources_exhausted && state.playback.playing {
-                        state.playback.playing = false;
-                    }
-
-                    if let Err(e) = master.submit(sub) {
-                        log::error!("Failed to submit audio to master: {}", e);
-                    }
-
-                    // render scopes
-                    scope_renderer.render(&device, &mut encoder, &state);
-
-                    if state.playback.playing {
-                        state.playback.frame += 1;
-                    }
-
-                    scope_timer += scope_frame_duration;
-                    if now.saturating_duration_since(scope_timer) > buffer_duration {
-                        scope_timer = now - buffer_duration;
-                    }
-                }
-
-                let now = time::Instant::now();
-                // always present new scope frames
-                if now > present_timer || scopes_updated {
-                    present_timer = now + present_frame_duration;
-
+                event::WindowEvent::MouseInput { .. }
+                | event::WindowEvent::CursorMoved { .. }
+                | event::WindowEvent::KeyboardInput { .. }
+                | event::WindowEvent::MouseWheel { .. } => window.request_redraw(),
+                event::WindowEvent::RedrawRequested => {
                     // begin rendering
+                    let mut encoder: wgpu::CommandEncoder =
+                        device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
                     let swap_frame = swapchain.get_next_texture();
 
                     // clear screen
@@ -422,7 +284,9 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                         .render(im_ui.render(), &device, &mut encoder, &swap_frame.view)
                         .expect("Failed to render UI"); // TODO do not expect
 
-                    queue.submit(&[encoder.finish()]);
+                    // finish rendering
+                    command_buffers.push(encoder.finish());
+                    queue.submit(&command_buffers.split_off(0));
 
                     // write frametime to state
                     state
@@ -433,9 +297,143 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                         state.debug.frametimes.pop_front();
                     }
                     frame_timer = time::Instant::now();
-                } else {
-                    // prevent cpu from burning BUT lowers framerate a bit
-                    *control_flow = ControlFlow::WaitUntil(present_timer);
+                }
+                _ => {}
+            },
+            event::Event::NewEvents(event::StartCause::ResumeTimeReached { .. }) => {
+                let now = time::Instant::now();
+
+                // create audio submission
+                let sub_builder = master.submission_builder(); // TODO optimize
+                let mut sub = sub_builder.create(scope_frame_secs);
+
+                let f = state.playback.frame;
+                let framerate = state.appearance.framerate;
+
+                let mut loaded_sources = state
+                    .audio_sources
+                    .iter_mut()
+                    .filter_map(|s| s.as_loaded())
+                    .collect::<Vec<_>>();
+
+                // TODO this is scuffed
+                let sources_exhausted = loaded_sources
+                    .iter()
+                    .all(|source| f > source.len() / (source.spec().sample_rate / framerate));
+
+                // process any pending audio
+                if !sources_exhausted && state.playback.playing || reprocess {
+                    reprocess = false;
+                    // create scope submissions
+                    let mut scope_submissions = state
+                        .scopes
+                        .iter()
+                        .map(|(name, scope)| (name.clone(), scope.build_submission())) // TODO maybe avoid clone
+                        .collect::<std::collections::HashMap<_, _>>();
+
+                    let window_secs = state
+                        .scopes
+                        .iter()
+                        .map(|(_, s)| s.wanted_length())
+                        .max_by(|a, b| a.partial_cmp(b).unwrap()) // time shouldnt be NaN
+                        .unwrap_or(0.0)
+                        .max(scope_frame_secs);
+
+                    for source in &mut loaded_sources {
+                        let channels = source.spec().channels;
+                        let sample_rate = source.spec().sample_rate;
+
+                        let window_len =
+                            (sample_rate as f32 * window_secs * f32::from(channels)) as u32;
+                        let window_pos = (sample_rate / framerate) * state.playback.frame;
+
+                        let window = source
+                            .chunk_at(window_pos, window_len as usize)
+                            .unwrap() // safe - no sources should be exhausted
+                            .iter()
+                            .copied()
+                            .collect::<Vec<_>>();
+
+                        for conn in source.connections {
+                            let iter = window
+                                .iter()
+                                .skip(conn.channel as usize)
+                                .step_by(channels as usize)
+                                .copied();
+
+                            match conn.target {
+                                ConnectionTarget::Master { ref channel } => {
+                                    // only submit master when playing
+                                    if state.playback.playing {
+                                        sub.add(
+                                            sample_rate,
+                                            match channel {
+                                                MasterChannel::Left => 0,
+                                                MasterChannel::Right => 1,
+                                            },
+                                            iter,
+                                        );
+                                    }
+                                }
+                                ConnectionTarget::Scope { ref name, channel } => {
+                                    if channel != 0 {
+                                        log::warn!("scope channels unimplemented!");
+                                    }
+                                    if let Some(sub) = scope_submissions.get_mut(name) {
+                                        sub.add(sample_rate, 0, iter);
+                                    } else {
+                                        log::warn!("connection to undefined scope {}!", name);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // submit and process scope audio
+                    for (name, sub) in scope_submissions.into_iter() {
+                        state.scopes.get_mut(&name).unwrap().submit(sub);
+                    }
+
+                    if state.debug.multithreaded_centering {
+                        state
+                            .scopes
+                            .par_iter_mut()
+                            .for_each(|(_, scope)| scope.process());
+                    } else {
+                        state
+                            .scopes
+                            .iter_mut()
+                            .for_each(|(_, scope)| scope.process());
+                    }
+
+                    // request window redraw
+                    window.request_redraw();
+                }
+
+                // pause when done
+                if sources_exhausted && state.playback.playing {
+                    state.playback.playing = false;
+                }
+
+                // submit master audio
+                if let Err(e) = master.submit(sub) {
+                    log::error!("Failed to submit audio to master: {}", e);
+                }
+
+                // render scopes
+                let mut encoder: wgpu::CommandEncoder =
+                    device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+                scope_renderer.render(&device, &mut encoder, &state);
+                command_buffers.push(encoder.finish());
+
+                if state.playback.playing {
+                    state.playback.frame += 1;
+                }
+
+                // update scope timer
+                scope_timer += scope_frame_duration;
+                if now.saturating_duration_since(scope_timer) > buffer_duration {
+                    scope_timer = now - buffer_duration;
                 }
             }
             _ => {}
