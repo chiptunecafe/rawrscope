@@ -18,10 +18,7 @@ pub struct Audio {
 #[derive(Clone, Debug, Derivative, Deserialize, Serialize)]
 #[derivative(Default)]
 #[serde(default)]
-pub struct Video {
-    #[derivative(Default(value = "150.0"))]
-    pub framerate_limit: f32,
-}
+pub struct Video {}
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default)]
