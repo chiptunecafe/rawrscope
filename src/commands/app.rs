@@ -207,26 +207,13 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
             .prepare_frame(imgui.io_mut(), &window)
             .expect("Failed to prepare UI rendering"); // TODO do not expect (need to figure out err handling in event loop)
 
-        let im_ui = imgui.frame();
-        let mut ext_events = ui::ExternalEvents::default();
-        ui::ui(&mut state, &im_ui, &mut ext_events);
-
-        // process external events
-        if ext_events.contains(ui::ExternalEvents::REBUILD_MASTER) {
-            if let Err(e) = rebuild_master(&mut master, &mut state) {
-                log::warn!("Failed to rebuild master mixer: {}", e);
-            }
-        }
-        if ext_events.contains(ui::ExternalEvents::REDRAW_SCOPES) {
-            reprocess = true;
-        }
-
         *control_flow = ControlFlow::WaitUntil(scope_timer);
 
         match event {
             event::Event::WindowEvent { event, .. } => match event {
                 event::WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
                 event::WindowEvent::Resized(_) => {
+                    *control_flow = ControlFlow::Poll;
                     window_size = window.inner_size().to_physical(window.hidpi_factor());
 
                     swap_desc.width = window_size.width as u32;
@@ -251,6 +238,21 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                 | event::WindowEvent::KeyboardInput { .. }
                 | event::WindowEvent::MouseWheel { .. } => window.request_redraw(),
                 event::WindowEvent::RedrawRequested => {
+                    // update ui
+                    let im_ui = imgui.frame();
+                    let mut ext_events = ui::ExternalEvents::default();
+                    ui::ui(&mut state, &im_ui, &mut ext_events);
+
+                    // process external events
+                    if ext_events.contains(ui::ExternalEvents::REBUILD_MASTER) {
+                        if let Err(e) = rebuild_master(&mut master, &mut state) {
+                            log::warn!("Failed to rebuild master mixer: {}", e);
+                        }
+                    }
+                    if ext_events.contains(ui::ExternalEvents::REDRAW_SCOPES) {
+                        reprocess = true;
+                    }
+
                     // begin rendering
                     let mut encoder: wgpu::CommandEncoder =
                         device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
