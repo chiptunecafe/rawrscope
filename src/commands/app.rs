@@ -108,12 +108,12 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     // create window
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
-        .with_inner_size((1600, 900).into())
+        .with_inner_size(winit::dpi::PhysicalSize::new(1600.0, 900.0))
         .with_title("rawrscope")
         .with_resizable(true)
         .build(&event_loop)
         .context(WindowCreation)?;
-    let mut window_size = window.inner_size().to_physical(window.hidpi_factor());
+    let mut window_size = window.inner_size();
 
     // initialize wgpu adapter and device
     let surface = wgpu::Surface::create(&window);
@@ -153,12 +153,11 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     imgui_plat.attach_window(
         imgui.io_mut(),
         &window,
-        imgui_winit_support::HiDpiMode::Default,
+        imgui_winit_support::HiDpiMode::Locked(1.0),
     );
     imgui.set_ini_filename(None);
 
-    let font_size = (13.0 * window.hidpi_factor()) as f32;
-    imgui.io_mut().font_global_scale = (1.0 / window.hidpi_factor()) as f32;
+    let font_size = 13.0;
 
     imgui
         .fonts()
@@ -179,13 +178,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
         &device,
         &scope_renderer.texture_view(),
         swap_desc.format,
-        preview_transform(
-            window
-                .inner_size()
-                .to_physical(window.hidpi_factor())
-                .into(),
-            (1920, 1080),
-        ),
+        preview_transform(window.inner_size().into(), (1920, 1080)),
     );
 
     let buffer_duration = time::Duration::from_secs_f32(config.audio.buffer_ms / 1000.0);
@@ -214,7 +207,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                 event::WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
                 event::WindowEvent::Resized(_) => {
                     *control_flow = ControlFlow::Poll;
-                    window_size = window.inner_size().to_physical(window.hidpi_factor());
+                    window_size = window.inner_size();
 
                     swap_desc.width = window_size.width as u32;
                     swap_desc.height = window_size.height as u32;
@@ -224,84 +217,78 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                     preview_renderer.update_transform(
                         &device,
                         &mut queue,
-                        preview_transform(
-                            window
-                                .inner_size()
-                                .to_physical(window.hidpi_factor())
-                                .into(),
-                            (1920, 1080),
-                        ),
+                        preview_transform(window.inner_size().into(), (1920, 1080)),
                     );
                 }
                 event::WindowEvent::MouseInput { .. }
                 | event::WindowEvent::CursorMoved { .. }
                 | event::WindowEvent::KeyboardInput { .. }
                 | event::WindowEvent::MouseWheel { .. } => window.request_redraw(),
-                event::WindowEvent::RedrawRequested => {
-                    // update ui
-                    let im_ui = imgui.frame();
-                    let mut ext_events = ui::ExternalEvents::default();
-                    ui::ui(&mut state, &im_ui, &mut ext_events);
-
-                    // process external events
-                    if ext_events.contains(ui::ExternalEvents::REBUILD_MASTER) {
-                        if let Err(e) = rebuild_master(&mut master, &mut state) {
-                            log::warn!("Failed to rebuild master mixer: {}", e);
-                        }
-                    }
-                    if ext_events.contains(ui::ExternalEvents::REDRAW_SCOPES) {
-                        reprocess = true;
-                    }
-
-                    // begin rendering
-                    let mut encoder: wgpu::CommandEncoder =
-                        device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
-                    let swap_frame = swapchain.get_next_texture();
-
-                    // clear screen
-                    {
-                        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                            color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                                attachment: &swap_frame.view,
-                                resolve_target: None,
-                                load_op: wgpu::LoadOp::Clear,
-                                store_op: wgpu::StoreOp::Store,
-                                clear_color: wgpu::Color {
-                                    r: 0.3,
-                                    g: 0.3,
-                                    b: 0.3,
-                                    a: 1.0,
-                                },
-                            }],
-                            depth_stencil_attachment: None,
-                        });
-                    }
-
-                    // copy scopes to screen
-                    preview_renderer.render(&mut encoder, &swap_frame.view, None);
-
-                    // render ui
-                    imgui_plat.prepare_render(&im_ui, &window);
-                    imgui_renderer
-                        .render(im_ui.render(), &device, &mut encoder, &swap_frame.view)
-                        .expect("Failed to render UI"); // TODO do not expect
-
-                    // finish rendering
-                    command_buffers.push(encoder.finish());
-                    queue.submit(&command_buffers.split_off(0));
-
-                    // write frametime to state
-                    state
-                        .debug
-                        .frametimes
-                        .push_back(frame_timer.elapsed().as_secs_f32() * 1000.0);
-                    if state.debug.frametimes.len() > 200 {
-                        state.debug.frametimes.pop_front();
-                    }
-                    frame_timer = time::Instant::now();
-                }
                 _ => {}
             },
+            event::Event::RedrawRequested(_) => {
+                // update ui
+                let im_ui = imgui.frame();
+                let mut ext_events = ui::ExternalEvents::default();
+                ui::ui(&mut state, &im_ui, &mut ext_events);
+
+                // process external events
+                if ext_events.contains(ui::ExternalEvents::REBUILD_MASTER) {
+                    if let Err(e) = rebuild_master(&mut master, &mut state) {
+                        log::warn!("Failed to rebuild master mixer: {}", e);
+                    }
+                }
+                if ext_events.contains(ui::ExternalEvents::REDRAW_SCOPES) {
+                    reprocess = true;
+                }
+
+                // begin rendering
+                let mut encoder: wgpu::CommandEncoder =
+                    device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+                let swap_frame = swapchain.get_next_texture();
+
+                // clear screen
+                {
+                    encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
+                            attachment: &swap_frame.view,
+                            resolve_target: None,
+                            load_op: wgpu::LoadOp::Clear,
+                            store_op: wgpu::StoreOp::Store,
+                            clear_color: wgpu::Color {
+                                r: 0.3,
+                                g: 0.3,
+                                b: 0.3,
+                                a: 1.0,
+                            },
+                        }],
+                        depth_stencil_attachment: None,
+                    });
+                }
+
+                // copy scopes to screen
+                preview_renderer.render(&mut encoder, &swap_frame.view, None);
+
+                // render ui
+                imgui_plat.prepare_render(&im_ui, &window);
+                imgui_renderer
+                    .render(im_ui.render(), &device, &mut encoder, &swap_frame.view)
+                    .expect("Failed to render UI"); // TODO do not expect
+
+                // finish rendering
+                command_buffers.push(encoder.finish());
+                queue.submit(&command_buffers.split_off(0));
+
+                // write frametime to state
+                state
+                    .debug
+                    .frametimes
+                    .push_back(frame_timer.elapsed().as_secs_f32() * 1000.0);
+                if state.debug.frametimes.len() > 200 {
+                    state.debug.frametimes.pop_front();
+                }
+                frame_timer = time::Instant::now();
+            }
             event::Event::NewEvents(event::StartCause::ResumeTimeReached { .. }) => {
                 let now = time::Instant::now();
 

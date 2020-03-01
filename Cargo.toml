@@ -12,14 +12,14 @@ ambassador = "0.2.1"
 bitflags = "1.2.1"
 clap = "2.33.0"
 cpal = "0.11.0"
-crossbeam-channel = "0.4.0"
+crossbeam-channel = "0.4.2"
 derivative = "1.0.3"
 directories = "2.0.2"
 fern = { version = "0.5.8", features = ["colored"] }
-git-version = "0.3.2"
+git-version = "0.3.4"
 hound = "3.4.0"
-imgui = "0.2.1"
-imgui-winit-support = { version = "0.2.1", default-features = false, features = ["winit-20"] }
+imgui = "0.3.0"
+imgui-winit-support = { version = "0.3.0", default-features = false, features = ["winit-20"] }
 imgui-wgpu = { git = "https://github.com/Yatekii/imgui-wgpu-rs" }
 log = "0.4.7"
 parking_lot = "0.10.0"
@@ -28,12 +28,12 @@ sample = "0.10.0"
 samplerate = "0.2.1"
 serde = { version = "1.0.104", features = ["derive"] }
 serde_yaml = "0.8.11"
-snafu = "0.6.0"
+snafu = "0.6.2"
 tinyfiledialogs = "3.3.6"
-toml = "0.5.1"
+toml = "0.5.6"
 ultraviolet = "0.4.5"
 vk-shader-macros = "0.2.2"
-winit = "0.20.0-alpha5"
+winit = "0.21.0"
 wgpu = "0.4.0"
 
 [patch.crates-io]
