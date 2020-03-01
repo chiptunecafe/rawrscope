@@ -395,6 +395,12 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                             .for_each(|(_, scope)| scope.process());
                     }
 
+                    // render scopes
+                    let mut encoder: wgpu::CommandEncoder =
+                        device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+                    scope_renderer.render(&device, &mut encoder, &state);
+                    command_buffers.push(encoder.finish());
+
                     // request window redraw
                     window.request_redraw();
                 }
@@ -408,12 +414,6 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                 if let Err(e) = master.submit(sub) {
                     log::error!("Failed to submit audio to master: {}", e);
                 }
-
-                // render scopes
-                let mut encoder: wgpu::CommandEncoder =
-                    device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
-                scope_renderer.render(&device, &mut encoder, &state);
-                command_buffers.push(encoder.finish());
 
                 if state.playback.playing {
                     state.playback.frame += 1;
