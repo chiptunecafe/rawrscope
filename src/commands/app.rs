@@ -157,18 +157,13 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     );
     imgui.set_ini_filename(None);
 
-    let font_size = 13.0;
+    let font_size = 15.0;
 
-    imgui
-        .fonts()
-        .add_font(&[imgui::FontSource::DefaultFontData {
-            config: Some(imgui::FontConfig {
-                oversample_h: 1,
-                pixel_snap_h: true,
-                size_pixels: font_size,
-                ..Default::default()
-            }),
-        }]);
+    imgui.fonts().add_font(&[imgui::FontSource::TtfData {
+        data: include_bytes!("../../fonts/Roboto-Regular.ttf"),
+        size_pixels: font_size,
+        config: None,
+    }]);
 
     let mut imgui_renderer =
         imgui_wgpu::Renderer::new_static(&mut imgui, &device, &mut queue, swap_desc.format, None);
