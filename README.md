@@ -5,9 +5,6 @@ oscilloscope visualizations of audio, typically chiptune.
 
 ## Build Status
 
-*Note: rawrscope uses custom Cargo profiles for CI and thus requires a nightly
-toolchain.*
-
 ![](https://github.com/chiptunecafe/rawrscope/workflows/CI/badge.svg)
 
 *TODO: somehow have separate badges for each os*
@@ -46,14 +43,12 @@ extract the archive.
 
 ### From source
 
-Clone the repository and run `cargo +nightly build -Z unstable-options --profile deploy`.
+Clone the repository and run `cargo build --release`.
 
 CMake and Python are required for building dependencies.
 
-The deploy profile strips away all debuginformation and enables LTO, whereas the release
-profile does not enable LTO and retains debugging symbols. The default dev profile
-should only be used for testing if things will compile since the optimizations that are
-applied in the other profiles are necessary for acceptable performance.
+*Note: The `dev` profile still has optimizations enabled, if you would like to
+skip optimizations, build with the `test` profile*
 
 ## Tutorial
 
