@@ -28,7 +28,7 @@ pub fn ui<'a, 'ui>(state: &'a mut State, ui: &'a Ui<'ui>, ext_events: &'a mut Ex
             }
 
             if imgui::MenuItem::new(&im_str!("Save"))
-                .enabled(state.file_path.as_os_str().len() != 0)
+                .enabled(!state.file_path.as_os_str().is_empty())
                 .build(ui)
             {
                 // TODO do not panic
