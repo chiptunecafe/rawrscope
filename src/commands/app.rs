@@ -185,6 +185,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     let mut frame_timer = time::Instant::now();
 
     let mut reprocess = true;
+    let mut redraw = false;
     let mut command_buffers: Vec<wgpu::CommandBuffer> = Vec::new();
 
     event_loop.run(move |event, _, control_flow| {
@@ -218,7 +219,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                 event::WindowEvent::MouseInput { .. }
                 | event::WindowEvent::CursorMoved { .. }
                 | event::WindowEvent::KeyboardInput { .. }
-                | event::WindowEvent::MouseWheel { .. } => window.request_redraw(),
+                | event::WindowEvent::MouseWheel { .. } => redraw = true,
                 _ => {}
             },
             event::Event::RedrawRequested(_) => {
@@ -401,7 +402,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                     command_buffers.push(encoder.finish());
 
                     // request window redraw
-                    window.request_redraw();
+                    redraw = true;
                 }
 
                 // pause when done
@@ -422,6 +423,12 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                 scope_timer += scope_frame_duration;
                 if now.saturating_duration_since(scope_timer) > buffer_duration {
                     scope_timer = now - buffer_duration;
+                }
+            }
+            event::Event::MainEventsCleared => {
+                if redraw {
+                    redraw = false;
+                    window.request_redraw();
                 }
             }
             _ => {}
