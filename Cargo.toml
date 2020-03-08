@@ -47,4 +47,4 @@ debug = true
 inherits = "release"
 debug = false
 opt-level = 3
-lto = true
+lto = "fat"
