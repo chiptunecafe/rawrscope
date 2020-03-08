@@ -287,6 +287,10 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
             event::Event::NewEvents(event::StartCause::ResumeTimeReached { .. }) => {
                 let now = time::Instant::now();
 
+                if now < scope_timer {
+                    return; // PATCH around winit#1504
+                }
+
                 // create audio submission
                 let sub_builder = master.submission_builder(); // TODO optimize
                 let mut sub = sub_builder.create(scope_frame_secs);
