@@ -30,7 +30,10 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub fn new(device: &wgpu::Device) -> Self {
+    pub fn new(device: &wgpu::Device, queue: &mut wgpu::Queue) -> Self {
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+
         let line_ssbo = device.create_buffer(&wgpu::BufferDescriptor {
             size: 1,
             usage: wgpu::BufferUsage::STORAGE
@@ -59,6 +62,17 @@ impl Renderer {
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT | wgpu::TextureUsage::SAMPLED,
+        });
+
+        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
+                attachment: &line_texture.create_default_view(),
+                resolve_target: None,
+                load_op: wgpu::LoadOp::Clear,
+                store_op: wgpu::StoreOp::Store,
+                clear_color: wgpu::Color::BLACK,
+            }],
+            depth_stencil_attachment: None,
         });
 
         let line_vs = device.create_shader_module(include_glsl!("shaders/line.vert"));
@@ -167,6 +181,8 @@ impl Renderer {
             format: wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT | wgpu::TextureUsage::SAMPLED,
         });
+
+        queue.submit(&[encoder.finish()]);
 
         Renderer {
             line_ssbo,

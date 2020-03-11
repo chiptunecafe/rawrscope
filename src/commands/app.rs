@@ -168,7 +168,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     let mut imgui_renderer =
         imgui_wgpu::Renderer::new_static(&mut imgui, &device, &mut queue, swap_desc.format, None);
 
-    let mut scope_renderer = crate::render::Renderer::new(&device);
+    let mut scope_renderer = crate::render::Renderer::new(&device, &mut queue);
     let preview_renderer = crate::render::quad::QuadRenderer::new(
         &device,
         &scope_renderer.texture_view(),
