@@ -64,17 +64,6 @@ impl Renderer {
             usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT | wgpu::TextureUsage::SAMPLED,
         });
 
-        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                attachment: &line_texture.create_default_view(),
-                resolve_target: None,
-                load_op: wgpu::LoadOp::Clear,
-                store_op: wgpu::StoreOp::Store,
-                clear_color: wgpu::Color::TRANSPARENT,
-            }],
-            depth_stencil_attachment: None,
-        });
-
         let line_vs = device.create_shader_module(include_glsl!("shaders/line.vert"));
         let line_fs = device.create_shader_module(include_glsl!("shaders/line.frag"));
 
@@ -183,13 +172,22 @@ impl Renderer {
         });
 
         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                attachment: &output_texture.create_default_view(),
-                resolve_target: None,
-                load_op: wgpu::LoadOp::Clear,
-                store_op: wgpu::StoreOp::Store,
-                clear_color: wgpu::Color::BLACK,
-            }],
+            color_attachments: &[
+                wgpu::RenderPassColorAttachmentDescriptor {
+                    attachment: &line_texture.create_default_view(),
+                    resolve_target: None,
+                    load_op: wgpu::LoadOp::Clear,
+                    store_op: wgpu::StoreOp::Store,
+                    clear_color: wgpu::Color::TRANSPARENT,
+                },
+                wgpu::RenderPassColorAttachmentDescriptor {
+                    attachment: &output_texture.create_default_view(),
+                    resolve_target: None,
+                    load_op: wgpu::LoadOp::Clear,
+                    store_op: wgpu::StoreOp::Store,
+                    clear_color: wgpu::Color::BLACK,
+                },
+            ],
             depth_stencil_attachment: None,
         });
 
