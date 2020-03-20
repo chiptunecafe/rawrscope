@@ -1,3 +1,5 @@
+#![windows_subsystem = "console"]
+
 mod args;
 mod audio;
 mod commands;
