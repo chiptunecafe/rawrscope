@@ -70,10 +70,10 @@ jobs:
     - uses: actions/upload-artifact@v1
       with:
         name: rawrscope-${{ matrix.os }}
-        path: target/deploy/rawrscope
+        path: target/release/rawrscope
       if: matrix.os != 'windows-latest'
     - uses: actions/upload-artifact@v1
       with:
         name: rawrscope-${{ matrix.os }}
-        path: target/deploy/rawrscope.exe
+        path: target/release/rawrscope.exe
       if: matrix.os == 'windows-latest'
