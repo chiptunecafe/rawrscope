@@ -23,7 +23,7 @@ imgui-winit-support = { version = "0.3.1", default-features = false, features = 
 imgui-wgpu = "0.6.0"
 log = "0.4.7"
 parking_lot = "0.10.0"
-rayon = { git = "https://github.com/nikomatsakis/rayon", branch = "latch-target-thread" }
+rayon = { git = "https://github.com/nikomatsakis/rayon", branch = "latch-target-thread-2" }
 sample = "0.10.0"
 samplerate = "0.2.1"
 serde = { version = "1.0.104", features = ["derive"] }
