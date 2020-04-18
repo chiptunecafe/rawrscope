@@ -19,7 +19,9 @@ float segmentDistance(vec2 v, vec2 w, vec2 p) {
 }
 
 void main() {
-    float dist = segmentDistance(f_Endpoints.xy, f_Endpoints.zw, gl_FragCoord.xy) - u_Thickness / 2.0;
+    // FIXME weird hack around new wgpu screen coordinates, may be totally wrong approach
+    vec2 fixed_coords = vec2(gl_FragCoord.x, u_Resolution.y - gl_FragCoord.y);
+    float dist = segmentDistance(f_Endpoints.xy, f_Endpoints.zw, fixed_coords) - u_Thickness / 2.0;
 
     f_Color = vec4(vec3(1), clamp(0.5 - dist, 0.0, 1.0));
 }

@@ -12,6 +12,8 @@ struct Uniforms {
     pub thickness: f32,
     pub base_index: i32,
 }
+unsafe impl bytemuck::Zeroable for Uniforms {}
+unsafe impl bytemuck::Pod for Uniforms {}
 
 pub struct Renderer {
     line_ssbo: wgpu::Buffer,
@@ -31,24 +33,28 @@ pub struct Renderer {
 
 impl Renderer {
     pub fn new(device: &wgpu::Device, queue: &mut wgpu::Queue) -> Self {
-        let mut encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("scope render init"),
+        });
 
         let line_ssbo = device.create_buffer(&wgpu::BufferDescriptor {
             size: 1,
             usage: wgpu::BufferUsage::STORAGE
                 | wgpu::BufferUsage::STORAGE_READ
                 | wgpu::BufferUsage::COPY_DST,
+            label: Some("scope line ssbo"),
         });
 
-        let line_uniform = device
-            .create_buffer_mapped(1, wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST)
-            .fill_from_slice(&[Uniforms {
-                resolution: [1920.0, 1080.0, 0.0, 0.0],
-                transform: uv::Mat4::identity(),
-                thickness: 0.0,
-                base_index: 0,
-            }]);
+        let line_uniform_data = Uniforms {
+            resolution: [1920.0, 1080.0, 0.0, 0.0],
+            transform: uv::Mat4::identity(),
+            thickness: 0.0,
+            base_index: 0,
+        };
+        let line_uniform = device.create_buffer_with_data(
+            bytemuck::bytes_of(&line_uniform_data),
+            wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+        );
 
         let line_texture = device.create_texture(&wgpu::TextureDescriptor {
             size: wgpu::Extent3d {
@@ -62,6 +68,7 @@ impl Renderer {
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT | wgpu::TextureUsage::SAMPLED,
+            label: Some("scope line intermediate texture"),
         });
 
         let line_vs = device.create_shader_module(include_glsl!("shaders/line.vert"));
@@ -69,7 +76,7 @@ impl Renderer {
 
         let line_ssbo_bind_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                bindings: &[wgpu::BindGroupLayoutBinding {
+                bindings: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStage::VERTEX,
                     ty: wgpu::BindingType::StorageBuffer {
@@ -77,15 +84,17 @@ impl Renderer {
                         readonly: true,
                     },
                 }],
+                label: Some("scope line ssbo bind layout"),
             });
 
         let line_uniform_bind_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                bindings: &[wgpu::BindGroupLayoutBinding {
+                bindings: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
                     ty: wgpu::BindingType::UniformBuffer { dynamic: false },
                 }],
+                label: Some("scope uniform bind layout"),
             });
 
         let line_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -101,6 +110,7 @@ impl Renderer {
                     range: 0..1,
                 },
             }],
+            label: Some("scope line ssbo bind group"),
         });
 
         let line_uniform_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -112,6 +122,7 @@ impl Renderer {
                     range: 0..std::mem::size_of::<Uniforms>() as u64,
                 },
             }],
+            label: Some("scope uniform bind group"),
         });
 
         let line_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -143,8 +154,10 @@ impl Renderer {
                 write_mask: wgpu::ColorWrite::ALL,
             }],
             depth_stencil_state: None,
-            index_format: wgpu::IndexFormat::Uint16,
-            vertex_buffers: &[],
+            vertex_state: wgpu::VertexStateDescriptor {
+                index_format: wgpu::IndexFormat::Uint16,
+                vertex_buffers: &[],
+            },
             sample_count: 1,
             sample_mask: !0,
             alpha_to_coverage_enabled: false,
@@ -169,6 +182,7 @@ impl Renderer {
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT | wgpu::TextureUsage::SAMPLED,
+            label: Some("scope output texture"),
         });
 
         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -231,11 +245,11 @@ impl Renderer {
                 resolution: [1920.0, 1080.0, 0.0, 0.0],
                 transform: uv::Mat4::from_translation(uv::Vec3::new(
                     -1.0 + grid_cell_width * scope.rect.x as f32,
-                    -1.0 + grid_cell_height * (scope.rect.y as f32 + 0.5 * scope.rect.h as f32),
+                    1.0 - grid_cell_height * (scope.rect.y as f32 + 0.5 * scope.rect.h as f32),
                     0.0,
                 )) * uv::Mat4::from_nonuniform_scale(uv::Vec4::new(
                     1.0 / scope.output().len() as f32 * grid_cell_width * scope.rect.w as f32,
-                    -1.0 * grid_cell_height * scope.rect.h as f32, // flipped since negative is up
+                    grid_cell_height * scope.rect.h as f32,
                     1.0,
                     1.0,
                 )),
@@ -245,9 +259,10 @@ impl Renderer {
             let render_data = LineRenderData {
                 data_range: line_data.len() as u32
                     ..line_data.len() as u32 + scope.output().len() as u32,
-                uniform_staging: device
-                    .create_buffer_mapped(1, wgpu::BufferUsage::COPY_SRC)
-                    .fill_from_slice(&[uniform]),
+                uniform_staging: device.create_buffer_with_data(
+                    bytemuck::bytes_of(&uniform),
+                    wgpu::BufferUsage::COPY_SRC,
+                ),
             };
             line_render_data.push(render_data);
 
@@ -257,9 +272,10 @@ impl Renderer {
         // update line ssbo
         if line_data.len() == self.line_data_length && line_data.len() > 1 {
             // create staging buffer
-            let copy_buffer = device
-                .create_buffer_mapped(line_data.len(), wgpu::BufferUsage::COPY_SRC)
-                .fill_from_slice(&line_data);
+            let copy_buffer = device.create_buffer_with_data(
+                bytemuck::cast_slice(&line_data),
+                wgpu::BufferUsage::COPY_SRC,
+            );
             // copy to existing buffer
             encoder.copy_buffer_to_buffer(
                 &copy_buffer,
@@ -275,14 +291,12 @@ impl Renderer {
                 line_data.len()
             );
             // create new line data buffer
-            let line_ssbo = device
-                .create_buffer_mapped(
-                    line_data.len(),
-                    wgpu::BufferUsage::STORAGE
-                        | wgpu::BufferUsage::STORAGE_READ
-                        | wgpu::BufferUsage::COPY_DST,
-                )
-                .fill_from_slice(&line_data);
+            let line_ssbo = device.create_buffer_with_data(
+                bytemuck::cast_slice(&line_data),
+                wgpu::BufferUsage::STORAGE
+                    | wgpu::BufferUsage::STORAGE_READ
+                    | wgpu::BufferUsage::COPY_DST,
+            );
             // create new binding
             let line_ssbo_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 layout: &self.line_ssbo_bind_layout,
@@ -293,6 +307,7 @@ impl Renderer {
                         range: 0..(line_data.len() * 4) as u64,
                     },
                 }],
+                label: Some("scope line ssbo bind group"),
             });
             // update fields in self
             self.line_ssbo = line_ssbo;
@@ -323,9 +338,11 @@ impl Renderer {
                     std::mem::size_of::<Uniforms>() as u64,
                 );
 
+                let line_view = self.line_texture.create_default_view();
+
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                        attachment: &self.line_texture.create_default_view(),
+                        attachment: &line_view,
                         resolve_target: None,
                         load_op: wgpu::LoadOp::Load,
                         store_op: wgpu::StoreOp::Store,

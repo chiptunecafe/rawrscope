@@ -1,6 +1,7 @@
 use std::panic::{set_hook, take_hook};
 use std::{io, time};
 
+use futures::executor::block_on;
 use rayon::prelude::*;
 use snafu::{OptionExt, ResultExt, Snafu};
 use ultraviolet as uv;
@@ -116,19 +117,23 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     let mut window_size = window.inner_size();
 
     // initialize wgpu adapter and device
+    // (maybe do this without block_on)
     let surface = wgpu::Surface::create(&window);
-    let adapter = wgpu::Adapter::request(&wgpu::RequestAdapterOptions {
-        power_preference: wgpu::PowerPreference::HighPerformance, // maybe do not request high perf
-        backends: wgpu::BackendBit::PRIMARY,
-    })
+    let adapter = block_on(wgpu::Adapter::request(
+        &wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::HighPerformance, // maybe do not request high perf
+            compatible_surface: Some(&surface),
+        },
+        wgpu::BackendBit::PRIMARY,
+    ))
     .context(AdapterSelection)?;
 
-    let (device, mut queue) = adapter.request_device(&wgpu::DeviceDescriptor {
+    let (device, mut queue) = block_on(adapter.request_device(&wgpu::DeviceDescriptor {
         extensions: wgpu::Extensions {
             anisotropic_filtering: false,
         },
         limits: wgpu::Limits::default(),
-    });
+    }));
 
     // create swapchain
     let mut swap_desc = wgpu::SwapChainDescriptor {
@@ -136,7 +141,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
         format: wgpu::TextureFormat::Bgra8Unorm,
         width: window_size.width as u32,
         height: window_size.height as u32,
-        present_mode: wgpu::PresentMode::NoVsync,
+        present_mode: wgpu::PresentMode::Immediate,
     };
     let mut swapchain = device.create_swap_chain(&surface, &swap_desc);
 
@@ -166,7 +171,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     }]);
 
     let mut imgui_renderer =
-        imgui_wgpu::Renderer::new_static(&mut imgui, &device, &mut queue, swap_desc.format, None);
+        imgui_wgpu::Renderer::new(&mut imgui, &device, &mut queue, swap_desc.format, None);
 
     let mut scope_renderer = crate::render::Renderer::new(&device, &mut queue);
     let preview_renderer = crate::render::quad::QuadRenderer::new(
@@ -240,8 +245,11 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
 
                 // begin rendering
                 let mut encoder: wgpu::CommandEncoder =
-                    device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
-                let swap_frame = swapchain.get_next_texture();
+                    device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                        label: Some("redraw"),
+                    });
+                // FIXME drop frame instead of panicking
+                let swap_frame = swapchain.get_next_texture().expect("swapchain timeout");
 
                 // clear screen
                 {
@@ -397,7 +405,9 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
 
                     // render scopes
                     let mut encoder: wgpu::CommandEncoder =
-                        device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+                        device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("scope render"),
+                        });
                     scope_renderer.render(&device, &mut encoder, &state);
                     command_buffers.push(encoder.finish());
 
