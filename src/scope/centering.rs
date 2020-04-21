@@ -7,6 +7,9 @@ pub use none::NoCentering;
 mod zero_crossing;
 pub use zero_crossing::ZeroCrossing;
 
+mod peak_speed;
+pub use peak_speed::PeakSpeed;
+
 #[delegatable_trait]
 pub trait Algorithm: Serialize + DeserializeOwned {
     fn calculate_offset(&self, data: &[f32], sample_rate: u32, window_len: usize) -> usize;
@@ -18,4 +21,5 @@ pub trait Algorithm: Serialize + DeserializeOwned {
 pub enum Centering {
     NoCentering(NoCentering),
     ZeroCrossing(ZeroCrossing),
+    PeakSpeed(PeakSpeed),
 }
