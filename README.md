@@ -36,10 +36,9 @@ oscilloscope visualizations of audio, typically chiptune.
 
 ### From CI
 
-View the CI runs [here](https://github.com/chiptunecafe/rawrscope/actions) (**must
-be logged into GitHub to view**), select the latest successful run, and download
-the appropriate ZIP file from the "Artifacts" tab in the top right. Then, just
-extract the archive.
+View the CI runs [here](https://github.com/chiptunecafe/rawrscope/actions),
+select the latest successful run, and download the appropriate ZIP file from the
+"Artifacts" tab in the top right. Then, just extract the archive.
 
 ### From source
 
@@ -70,6 +69,5 @@ for details.
 
 ## Future Roadmap
 
-* Full timeline editor for audio sources
-* Integrated rendering of chiptune files
+* Multi-song projects
 * Scripting support
