@@ -68,6 +68,15 @@ pub struct DebugState {
     pub frametimes: VecDeque<f32>,
 }
 
+#[derive(Derivative)]
+#[derivative(Default)]
+pub struct UiState {
+    #[derivative(Default(value = "true"))]
+    pub show_main: bool,
+    #[derivative(Default(value = "true"))]
+    pub show_debug: bool,
+}
+
 #[derive(Default, Deserialize, Serialize)]
 pub struct State {
     pub audio_sources: Vec<audio::source::AudioSource>,
@@ -80,6 +89,8 @@ pub struct State {
     #[serde(skip)]
     pub playback: PlaybackState,
 
+    #[serde(skip)]
+    pub ui: UiState,
     #[serde(skip)]
     pub debug: DebugState,
 }
