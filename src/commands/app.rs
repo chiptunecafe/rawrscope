@@ -325,38 +325,49 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                     let mut scope_submissions = state
                         .scopes
                         .iter()
-                        .map(|(name, scope)| (name.clone(), scope.build_submission())) // TODO maybe avoid clone
+                        .map(|(name, scope)| {
+                            (
+                                name.clone(),
+                                (scope.wanted_length(), scope.build_submission()),
+                            )
+                        }) // TODO maybe avoid clone
                         .collect::<std::collections::HashMap<_, _>>();
 
-                    let window_secs = state
+                    let scope_window_secs = state
                         .scopes
                         .iter()
                         .map(|(_, s)| s.wanted_length())
                         .max_by(|a, b| a.partial_cmp(b).unwrap()) // time shouldnt be NaN
-                        .unwrap_or(0.0)
-                        .max(scope_frame_secs);
+                        .unwrap_or(0.0);
+                    let full_window_secs =
+                        scope_window_secs.max(scope_frame_secs + scope_window_secs / 2.);
 
                     for source in &mut loaded_sources {
                         let channels = source.spec().channels;
                         let sample_rate = source.spec().sample_rate;
 
-                        let window_len =
-                            (sample_rate as f32 * window_secs * f32::from(channels)) as u32;
-                        let window_pos = (sample_rate / framerate) * state.playback.frame;
+                        let scope_window_len =
+                            (sample_rate as f32 * scope_window_secs * f32::from(channels)) as u32;
+                        let full_window_len =
+                            (sample_rate as f32 * full_window_secs * f32::from(channels)) as u32;
+
+                        let playhead = (sample_rate / framerate) * state.playback.frame;
+                        let window_pos = playhead.saturating_sub(scope_window_len / 2);
 
                         let window = source
-                            .chunk_at(window_pos, window_len as usize)
+                            .chunk_at(window_pos, full_window_len as usize)
                             .unwrap() // safe - no sources should be exhausted
                             .iter()
                             .copied()
                             .collect::<Vec<_>>();
 
                         for conn in source.connections {
-                            let iter = window
+                            let channel_iter = window
                                 .iter()
                                 .skip(conn.channel as usize)
                                 .step_by(channels as usize)
                                 .copied();
+                            let playhead_offset = (playhead - window_pos) / channels as u32;
 
                             match conn.target {
                                 ConnectionTarget::Master { ref channel } => {
@@ -368,7 +379,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                                                 MasterChannel::Left => 0,
                                                 MasterChannel::Right => 1,
                                             },
-                                            iter,
+                                            channel_iter.skip(playhead_offset as usize),
                                         );
                                     }
                                 }
@@ -376,8 +387,13 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                                     if channel != 0 {
                                         log::warn!("scope channels unimplemented!");
                                     }
-                                    if let Some(sub) = scope_submissions.get_mut(name) {
-                                        sub.add(sample_rate, 0, iter);
+                                    if let Some((wanted_length, sub)) =
+                                        scope_submissions.get_mut(name)
+                                    {
+                                        let sub_len = (sample_rate as f32 * *wanted_length) as u32;
+                                        let offset = playhead_offset.saturating_sub(sub_len / 2);
+
+                                        sub.add(sample_rate, 0, channel_iter.skip(offset as usize));
                                     } else {
                                         log::warn!("connection to undefined scope {}!", name);
                                     }
@@ -387,7 +403,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                     }
 
                     // submit and process scope audio
-                    for (name, sub) in scope_submissions.into_iter() {
+                    for (name, (_, sub)) in scope_submissions.into_iter() {
                         state.scopes.get_mut(&name).unwrap().submit(sub);
                     }
 
