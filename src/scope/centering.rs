@@ -1,3 +1,5 @@
+use std::ops::RangeInclusive;
+
 use ambassador::{delegatable_trait, Delegate};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
@@ -9,8 +11,8 @@ pub use zero_crossing::ZeroCrossing;
 
 #[delegatable_trait]
 pub trait Algorithm: Serialize + DeserializeOwned {
-    fn calculate_offset(&self, data: &[f32], sample_rate: u32, window_len: usize) -> usize;
-    fn lookahead(&self) -> f32;
+    // TODO not sure if range is allowed to be inclusive
+    fn center(&self, data: &[f32], center_range: &RangeInclusive<usize>) -> usize;
 }
 
 #[derive(Delegate, Deserialize, Serialize)]

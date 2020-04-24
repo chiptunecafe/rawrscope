@@ -47,6 +47,7 @@ pub struct Scope {
     pub line_width: f32,
     pub rect: GridRect,
 
+    pub trigger_width: f32,
     pub centering: centering::Centering,
 
     #[serde(skip)]
@@ -61,7 +62,7 @@ pub struct Scope {
 
 impl Scope {
     pub fn wanted_length(&self) -> f32 {
-        self.window_size + self.centering.lookahead()
+        self.window_size + self.trigger_width
     }
 
     pub fn configure_mixer(&mut self, source_rates: Vec<u32>) {
@@ -102,9 +103,15 @@ impl Scope {
         let output_size = (sample_rate as f32 * self.window_size) as usize;
 
         self.audio = mixer.next().expect("attempted to process no audio!");
-        self.center_offset = self
-            .centering
-            .calculate_offset(&self.audio, sample_rate, output_size);
+
+        let trigger_samples = (sample_rate as f32 * self.trigger_width) as usize;
+        let trigger_pad = (self.audio.len() - trigger_samples) / 2;
+        let trigger_range = trigger_pad..=self.audio.len() - trigger_pad;
+
+        let center = self.centering.center(&self.audio, &trigger_range);
+        assert!(trigger_range.contains(&center));
+
+        self.center_offset = center - output_size / 2;
     }
 
     pub fn output(&self) -> &[f32] {
@@ -115,6 +122,6 @@ impl Scope {
             .sample_rate() as f32
             * self.window_size) as usize;
 
-        &self.audio[0 + self.center_offset..output_size + self.center_offset]
+        &self.audio[self.center_offset..output_size + self.center_offset]
     }
 }
