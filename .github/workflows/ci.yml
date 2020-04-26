@@ -1,79 +1,191 @@
 name: CI
 on: [push]
+
 jobs:
   test:
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.may-fail }}
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macOS-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        arch: [x86_64]
+        may-fail: [false]
+        include:
+        - os: windows-latest
+          arch: i686
+          target: i686-pc-windows-msvc
+          may-fail: true
+        ### thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: CrossCompilation' on crate x11 2.18.2
+        ### despite PKG_CONFIG_ALLOW_CROSS being set to 1
+        # - os: ubuntu-latest
+        #   arch: i686
+        #   target: i686-unknown-linux-gnu
+        #   may-fail: true
+        ### component 'rust-std' for target 'i686-apple-darwin' is unavailable for download for channel stable
+        # - os: macos-latest
+        #   arch: i686
+        #   target: i686-apple-darwin
+        #   may-fail: true
+
     steps:
-    - uses: hecrj/setup-rust-action@v1
+    - name: Install Rust Toolchain [x86_64]
+      if: matrix.arch == 'x86_64'
+      uses: actions-rs/toolchain@v1
       with:
-        rust-version: stable
+        toolchain: stable
+        default: true
+    - name: Install Rust Toolchain [Cross]
+      if: matrix.arch != 'x86_64'
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: ${{ matrix.target }}
+        override: true
+
     - uses: actions/checkout@v1
-    - name: Install Linux dependencies
+
+    - name: Install Dependencies [Linux]
       if: matrix.os == 'ubuntu-latest'
-      run: sudo apt-get update && sudo apt-get install libasound2-dev
-    - name: Install Windows dependencies
+      run: |
+        if [ '${{ matrix.arch }}' == 'i686' ]; then
+          sudo dpkg --add-architecture i386
+          export SUFFIX=":i386"
+        fi
+        sudo apt-get update
+        sudo apt-get install libasound2-dev$SUFFIX
+    - name: Install Dependencies [Windows]
       if: matrix.os == 'windows-latest'
       run: choco install llvm ninja
+
     - name: Cache cargo registry
       uses: actions/cache@v1
       with:
         path: ~/.cargo/registry
-        key: test-${{ matrix.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+        key: test-${{ matrix.os }}-${{ matrix.arch }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
     - name: Cache cargo index
       uses: actions/cache@v1
       with:
         path: ~/.cargo/git
-        key: test-${{ matrix.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+        key: test-${{ matrix.os }}-${{ matrix.arch }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
     - name: Cache cargo build
       uses: actions/cache@v1
       with:
         path: target
-        key: test-${{ matrix.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-    - name: Test
-      run: cargo test
+        key: test-${{ matrix.os }}-${{ matrix.arch }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Test [x86_64]
+      if: matrix.arch == 'x86_64'
+      uses: actions-rs/cargo@v1
+      with:
+        command: test
+    - name: Test [Cross]
+      if: matrix.arch != 'x86_64'
+      env:
+        PKG_CONFIG_ALLOW_CROSS: 1
+      uses: actions-rs/cargo@v1
+      with:
+        use-cross: true
+        command: test
+        args: --target ${{ matrix.target }}
+
   build:
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.may-fail }}
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macOS-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        arch: [x86_64]
+        may-fail: [false]
+        include:
+        - os: windows-latest
+          arch: i686
+          target: i686-pc-windows-msvc
+          may-fail: true
+        ### thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: CrossCompilation' on crate x11 2.18.2
+        ### despite PKG_CONFIG_ALLOW_CROSS being set to 1
+        # - os: ubuntu-latest
+        #   arch: i686
+        #   target: i686-unknown-linux-gnu
+        #   may-fail: true
+        ### component 'rust-std' for target 'i686-apple-darwin' is unavailable for download for channel stable
+        # - os: macos-latest
+        #   arch: i686
+        #   target: i686-apple-darwin
+        #   may-fail: true
+
     steps:
-    - uses: hecrj/setup-rust-action@v1
+    - name: Install Rust Toolchain [x86_64]
+      if: matrix.arch == 'x86_64'
+      uses: actions-rs/toolchain@v1
       with:
-        rust-version: stable
+        toolchain: stable
+        default: true
+    - name: Install Rust Toolchain [Cross]
+      if: matrix.arch != 'x86_64'
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: ${{ matrix.target }}
+        override: true
+
     - uses: actions/checkout@v1
-    - name: Install Linux dependencies
+
+    - name: Install Dependencies [Linux]
       if: matrix.os == 'ubuntu-latest'
-      run: sudo apt-get update && sudo apt-get install libasound2-dev
-    - name: Install Windows dependencies
+      run: |
+        if [ '${{ matrix.arch }}' == 'i686' ]; then
+          sudo dpkg --add-architecture i386
+          export SUFFIX=":i386"
+        fi
+        sudo apt-get update
+        sudo apt-get install libasound2-dev$SUFFIX
+    - name: Install Dependencies [Windows]
       if: matrix.os == 'windows-latest'
       run: choco install llvm ninja
+
     - name: Cache cargo registry
       uses: actions/cache@v1
       with:
         path: ~/.cargo/registry
-        key: build-${{ matrix.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+        key: build-${{ matrix.os }}-${{ matrix.arch }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
     - name: Cache cargo index
       uses: actions/cache@v1
       with:
         path: ~/.cargo/git
-        key: build-${{ matrix.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+        key: build-${{ matrix.os }}-${{ matrix.arch }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
     - name: Cache cargo build
       uses: actions/cache@v1
       with:
         path: target
-        key: build-${{ matrix.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-    - name: Build
-      run: cargo build --release
-    - uses: actions/upload-artifact@v1
+        key: build-${{ matrix.os }}-${{ matrix.arch }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Build [x86_64]
+      if: matrix.arch == 'x86_64'
+      uses: actions-rs/cargo@v1
       with:
-        name: rawrscope-${{ matrix.os }}
-        path: target/release/rawrscope
+        command: build
+        args: --release
+    - name: Build [Cross]
+      if: matrix.arch != 'x86_64'
+      env:
+        PKG_CONFIG_ALLOW_CROSS: 1
+      uses: actions-rs/cargo@v1
+      with:
+        use-cross: true
+        command: build
+        args: --target ${{ matrix.target }} --release
+
+    - name: Upload Artifact [Non-Windows]
       if: matrix.os != 'windows-latest'
-    - uses: actions/upload-artifact@v1
+      uses: actions/upload-artifact@v1
       with:
-        name: rawrscope-${{ matrix.os }}
-        path: target/release/rawrscope.exe
+        name: rawrscope-${{ matrix.os }}-${{ matrix.arch }}
+        path: target/${{ matrix.target }}/release/rawrscope
+    - name: Upload Artifact [Windows]
       if: matrix.os == 'windows-latest'
+      uses: actions/upload-artifact@v1
+      with:
+        name: rawrscope-${{ matrix.os }}-${{ matrix.arch }}
+        path: target/${{ matrix.target }}/release/rawrscope.exe
