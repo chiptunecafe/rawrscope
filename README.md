@@ -44,7 +44,7 @@ select the latest successful run, and download the appropriate ZIP file from the
 
 Clone the repository and run `cargo build --release`.
 
-CMake and Python are required for building dependencies.
+CMake, Ninja, and Python are required for building dependencies.
 
 *Note: The `dev` profile still has optimizations enabled, if you would like to
 skip optimizations, build with the `test` profile*
