@@ -13,21 +13,94 @@ struct Uniforms {
     pub base_index: i32,
 }
 unsafe impl bytemuck::Zeroable for Uniforms {}
-unsafe impl bytemuck::Pod for Uniforms {}
+unsafe impl bytemuck::Pod for Uniforms {} // uv::Mat4 is ok
+
+struct BufferExt {
+    pub len: usize,
+    pub buf: wgpu::Buffer,
+    pub bind: wgpu::BindGroup,
+}
+
+struct DynamicBuffer<'a> {
+    buffer: Option<BufferExt>,
+    label: &'a str,
+}
+
+impl<'a> DynamicBuffer<'a> {
+    fn new(label: &'a str) -> Self {
+        Self {
+            buffer: None,
+            label,
+        }
+    }
+
+    fn buffer(&self) -> Option<&BufferExt> {
+        self.buffer.as_ref()
+    }
+
+    fn upload(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        data: &[u8],
+        usage: wgpu::BufferUsage,
+        bind_fn: &dyn Fn(&wgpu::Buffer) -> wgpu::BindGroup,
+    ) {
+        match self.buffer.as_mut() {
+            Some(db) if db.len == data.len() => {
+                if data.len() == db.len {
+                    let staging = device.create_buffer_with_data(data, wgpu::BufferUsage::COPY_SRC);
+                    encoder.copy_buffer_to_buffer(&staging, 0, &db.buf, 0, db.len as u64);
+                }
+            }
+            _ => {
+                if self.buffer.is_some() {
+                    log::info!(
+                        "Resizing DynamicBuffer {}; newsize={}",
+                        self.label,
+                        data.len()
+                    );
+                } else {
+                    log::info!(
+                        "Initializing DynamicBuffer {}; size={}",
+                        self.label,
+                        data.len()
+                    );
+                }
+
+                let buffer =
+                    device.create_buffer_with_data(data, usage | wgpu::BufferUsage::COPY_DST);
+                let binding = bind_fn(&buffer);
+
+                self.buffer = Some(BufferExt {
+                    len: data.len(),
+                    buf: buffer,
+                    bind: binding,
+                })
+            }
+        }
+    }
+
+    fn clear(&mut self) {
+        log::info!("Clearing DynamicBuffer {}", self.label);
+        self.buffer.take();
+    }
+}
 
 pub struct Renderer {
-    line_ssbo: wgpu::Buffer,
-    line_data_length: usize,
-    line_uniform: wgpu::Buffer,
-    line_texture: wgpu::Texture,
     line_ssbo_bind_layout: wgpu::BindGroupLayout,
-    line_ssbo_bind: wgpu::BindGroup,
+    line_ssbo: DynamicBuffer<'static>,
+
+    line_uniform: wgpu::Buffer,
     line_uniform_bind: wgpu::BindGroup,
+
+    line_texture: wgpu::Texture,
     line_pipeline: wgpu::RenderPipeline,
 
     line_copy: quad::QuadRenderer,
 
     output_texture: wgpu::Texture,
+
     flick: bool,
 }
 
@@ -35,14 +108,6 @@ impl Renderer {
     pub fn new(device: &wgpu::Device, queue: &mut wgpu::Queue) -> Self {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("scope render init"),
-        });
-
-        let line_ssbo = device.create_buffer(&wgpu::BufferDescriptor {
-            size: 1,
-            usage: wgpu::BufferUsage::STORAGE
-                | wgpu::BufferUsage::STORAGE_READ
-                | wgpu::BufferUsage::COPY_DST,
-            label: Some("scope line ssbo"),
         });
 
         let line_uniform_data = Uniforms {
@@ -101,18 +166,6 @@ impl Renderer {
             bind_group_layouts: &[&line_ssbo_bind_layout, &line_uniform_bind_layout],
         });
 
-        let line_ssbo_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &line_ssbo_bind_layout,
-            bindings: &[wgpu::Binding {
-                binding: 0,
-                resource: wgpu::BindingResource::Buffer {
-                    buffer: &line_ssbo,
-                    range: 0..1,
-                },
-            }],
-            label: Some("scope line ssbo bind group"),
-        });
-
         let line_uniform_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &line_uniform_bind_layout,
             bindings: &[wgpu::Binding {
@@ -163,6 +216,8 @@ impl Renderer {
             alpha_to_coverage_enabled: false,
         });
 
+        let line_ssbo = DynamicBuffer::new("scope line ssbo");
+
         let line_copy = quad::QuadRenderer::new(
             &device,
             &line_texture.create_default_view(),
@@ -209,11 +264,9 @@ impl Renderer {
 
         Renderer {
             line_ssbo,
-            line_data_length: 1,
             line_uniform,
             line_texture,
             line_ssbo_bind_layout,
-            line_ssbo_bind,
             line_uniform_bind,
             line_pipeline,
 
@@ -270,52 +323,33 @@ impl Renderer {
         }
 
         // update line ssbo
-        if line_data.len() == self.line_data_length && line_data.len() > 1 {
-            // create staging buffer
-            let copy_buffer = device.create_buffer_with_data(
-                bytemuck::cast_slice(&line_data),
-                wgpu::BufferUsage::COPY_SRC,
+        if !state.scopes.is_empty() {
+            let line_data = bytemuck::cast_slice(&line_data);
+            let line_layout = &self.line_ssbo_bind_layout;
+            self.line_ssbo.upload(
+                device,
+                encoder,
+                line_data,
+                wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::STORAGE_READ,
+                &|buffer| {
+                    device.create_bind_group(&wgpu::BindGroupDescriptor {
+                        layout: line_layout,
+                        bindings: &[wgpu::Binding {
+                            binding: 0,
+                            resource: wgpu::BindingResource::Buffer {
+                                buffer,
+                                range: 0..line_data.len() as u64,
+                            },
+                        }],
+                        label: Some("scope ssbo line bind group"),
+                    })
+                },
             );
-            // copy to existing buffer
-            encoder.copy_buffer_to_buffer(
-                &copy_buffer,
-                0,
-                &self.line_ssbo,
-                0,
-                (line_data.len() * 4) as u64,
-            );
-        } else if line_data.len() > 1 {
-            log::info!(
-                "resizing line ssbo ({} -> {})",
-                self.line_data_length,
-                line_data.len()
-            );
-            // create new line data buffer
-            let line_ssbo = device.create_buffer_with_data(
-                bytemuck::cast_slice(&line_data),
-                wgpu::BufferUsage::STORAGE
-                    | wgpu::BufferUsage::STORAGE_READ
-                    | wgpu::BufferUsage::COPY_DST,
-            );
-            // create new binding
-            let line_ssbo_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                layout: &self.line_ssbo_bind_layout,
-                bindings: &[wgpu::Binding {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &line_ssbo,
-                        range: 0..(line_data.len() * 4) as u64,
-                    },
-                }],
-                label: Some("scope line ssbo bind group"),
-            });
-            // update fields in self
-            self.line_ssbo = line_ssbo;
-            self.line_ssbo_bind = line_ssbo_bind;
-            self.line_data_length = line_data.len();
+        } else {
+            self.line_ssbo.clear();
         }
 
-        if self.line_data_length > 1 {
+        if let Some(ssbo) = self.line_ssbo.buffer() {
             // render lines (each line has to be a separate pass :/)
             {
                 encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -351,7 +385,7 @@ impl Renderer {
                     depth_stencil_attachment: None,
                 });
                 pass.set_pipeline(&self.line_pipeline);
-                pass.set_bind_group(0, &self.line_ssbo_bind, &[]);
+                pass.set_bind_group(0, &ssbo.bind, &[]);
                 pass.set_bind_group(1, &self.line_uniform_bind, &[]);
 
                 let begin = render_data.data_range.start * 6;
