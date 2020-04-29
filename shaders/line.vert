@@ -19,8 +19,8 @@ const int c_DirLut[6] = int[6](1, 1, -1, -1, -1, 1);
 void main() {
     // fetch and transform line endpoints
     int line_idx = (gl_VertexIndex) / 6;
-    vec2 a = (u_Transform * vec4(line_idx - u_BaseIndex, sb_LineData[line_idx], 0.0, 1.0)).xy;
-    vec2 b = (u_Transform * vec4(line_idx - u_BaseIndex + 1, sb_LineData[line_idx + 1], 0.0, 1.0)).xy;
+    vec2 a = (u_Transform * vec4(line_idx, sb_LineData[line_idx + u_BaseIndex], 0.0, 1.0)).xy;
+    vec2 b = (u_Transform * vec4(line_idx + 1, sb_LineData[line_idx + u_BaseIndex + 1], 0.0, 1.0)).xy;
 
     // write endpoints
     f_Endpoints = vec4((a * 0.5 + 0.5) * u_Resolution.xy, (b * 0.5 + 0.5) * u_Resolution.xy);
