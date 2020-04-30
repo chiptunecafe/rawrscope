@@ -359,29 +359,15 @@ impl Renderer {
         // TODO make this guard logic a bit cleaner
         if let Some(ssbo) = self.line_ssbo.buffer() {
             if let Some(uniforms) = self.line_uniform.buffer() {
-                // clear screen
-                {
-                    encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                            attachment: &self.line_texture.create_default_view(),
-                            resolve_target: None,
-                            load_op: wgpu::LoadOp::Clear,
-                            store_op: wgpu::StoreOp::Store,
-                            clear_color: wgpu::Color::TRANSPARENT,
-                        }],
-                        depth_stencil_attachment: None,
-                    });
-                }
-
                 // render lines
                 let line_view = self.line_texture.create_default_view();
                 let mut line_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
                         attachment: &line_view,
                         resolve_target: None,
-                        load_op: wgpu::LoadOp::Load,
+                        load_op: wgpu::LoadOp::Clear,
                         store_op: wgpu::StoreOp::Store,
-                        clear_color: wgpu::Color::BLACK,
+                        clear_color: wgpu::Color::TRANSPARENT,
                     }],
                     depth_stencil_attachment: None,
                 });
