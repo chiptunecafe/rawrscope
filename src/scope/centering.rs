@@ -9,6 +9,9 @@ pub use none::NoCentering;
 mod zero_crossing;
 pub use zero_crossing::ZeroCrossing;
 
+mod peak_speed;
+pub use peak_speed::PeakSpeed;
+
 #[delegatable_trait]
 pub trait Algorithm: Serialize + DeserializeOwned {
     // TODO not sure if range is allowed to be inclusive
@@ -20,4 +23,5 @@ pub trait Algorithm: Serialize + DeserializeOwned {
 pub enum Centering {
     NoCentering(NoCentering),
     ZeroCrossing(ZeroCrossing),
+    PeakSpeed(PeakSpeed),
 }
