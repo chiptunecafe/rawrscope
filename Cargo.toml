@@ -12,19 +12,19 @@ bytemuck = "1.2.0"
 clap = "2.33.0"
 cpal = "0.11.0"
 crossbeam-channel = "0.4.2"
-derivative = "1.0.3"
-directories = "2.0.2"
-fern = { version = "0.5.8", features = ["colored"] }
+derivative = "2.1.1"
+directories-next = "1.0.1"
+fern = { version = "0.6.0", features = ["colored"] }
 futures = "0.3.4"
 git-version = "0.3.4"
 hound = "3.4.0"
-imgui = "0.3.0"
-imgui-winit-support = { version = "0.3.1", default-features = false, features = ["winit-20"] }
-imgui-wgpu = "0.6.0"
+imgui = "0.4.0"
+imgui-winit-support = "0.4.0"
+imgui-wgpu = "0.7.0"
 log = "0.4.7"
-parking_lot = "0.10.0"
+parking_lot = "0.11.0"
 rayon = { git = "https://github.com/nikomatsakis/rayon", branch = "latch-target-thread-2" }
-sample = "0.10.0"
+sample = "0.11.0"
 samplerate = "0.2.1"
 serde = { version = "1.0.104", features = ["derive"] }
 serde_yaml = "0.8.11"
@@ -33,7 +33,7 @@ tinyfiledialogs = "3.3.6"
 toml = "0.5.6"
 ultraviolet = "0.4.5"
 vk-shader-macros = "0.2.2"
-winit = "0.21.0"
+winit = "0.22.2"
 wgpu = "0.5.0"
 
 [patch.crates-io]

@@ -46,8 +46,8 @@ pub enum Error {
 }
 
 impl Config {
-    fn config_dir() -> Result<directories::ProjectDirs, Error> {
-        directories::ProjectDirs::from("", "rytone", "rawrscope").context(HomeDirectory)
+    fn config_dir() -> Result<directories_next::ProjectDirs, Error> {
+        directories_next::ProjectDirs::from("", "rytone", "rawrscope").context(HomeDirectory)
     }
 
     pub fn load() -> Self {
