@@ -74,6 +74,8 @@ pub struct UiState {
     #[derivative(Default(value = "true"))]
     pub show_main: bool,
     #[derivative(Default(value = "true"))]
+    pub show_scopes: bool,
+    #[derivative(Default(value = "false"))]
     pub show_debug: bool,
 }
 

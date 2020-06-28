@@ -4,6 +4,8 @@ use bitflags::bitflags;
 use imgui::{im_str, Ui};
 use tinyfiledialogs as tfd;
 
+use crate::scope::centering;
+
 bitflags! {
     #[derive(Default)]
     pub struct ExternalEvents: u32 {
@@ -18,7 +20,71 @@ fn view_toggle(v: &mut bool, text: &imgui::ImStr, ui: &imgui::Ui) {
     }
 }
 
+fn ms_slider(label: &str, value: &mut f32, ui: &imgui::Ui) {
+    let mut ms = *value * 1000.;
+    imgui::DragFloat::new(ui, &im_str!("{}", label), &mut ms)
+        .min(1.0)
+        .max(5000.0)
+        .display_format(&im_str!("%.2f ms"))
+        .build();
+    *value = ms / 1000.;
+}
+
+fn scope_editor(name: &str, scope: &mut crate::scope::Scope, ui: &imgui::Ui) {
+    if imgui::CollapsingHeader::new(&im_str!("{}", name)).build(ui) {
+        let im_id = ui.push_id(name);
+
+        ui.text("Appearance");
+        ms_slider("Window Size", &mut scope.window_size, ui);
+
+        // TODO better ui
+        let mut pos = [scope.rect.x as i32, scope.rect.y as i32];
+        imgui::DragInt2::new(ui, &im_str!("Top Left"), &mut pos)
+            .speed(0.1)
+            .build();
+        scope.rect.x = pos[0] as u32;
+        scope.rect.y = pos[1] as u32;
+        let mut size = [scope.rect.w as i32, scope.rect.h as i32];
+        imgui::DragInt2::new(ui, &im_str!("Bottom Right"), &mut size)
+            .speed(0.1)
+            .build();
+        scope.rect.w = size[0] as u32;
+        scope.rect.h = size[1] as u32;
+
+        ui.spacing();
+
+        ui.text("Style");
+        imgui::DragFloat::new(ui, &im_str!("Line Width"), &mut scope.line_width)
+            .min(0.0)
+            .max(100.0)
+            .speed(0.25)
+            .display_format(&im_str!("%.2f px"))
+            .build();
+
+        ui.spacing();
+
+        ui.text("Centering");
+        ms_slider("Trigger Width", &mut scope.trigger_width, ui);
+        imgui::ComboBox::new(&im_str!("Algorithm"))
+            .preview_value(&im_str!("{}", scope.centering))
+            .build(ui, || {
+                // TODO maybe generate this code
+                if imgui::Selectable::new(&im_str!("None")).build(ui) {
+                    scope.centering = centering::Centering::NoCentering(centering::NoCentering);
+                }
+                if imgui::Selectable::new(&im_str!("Zero Crossing")).build(ui) {
+                    scope.centering = centering::Centering::ZeroCrossing(centering::ZeroCrossing);
+                }
+            });
+
+        im_id.pop(ui);
+    }
+}
+
 pub fn ui<'a, 'ui>(state: &'a mut State, ui: &'a Ui<'ui>, ext_events: &'a mut ExternalEvents) {
+    // hack
+    *ext_events |= ExternalEvents::REDRAW_SCOPES;
+
     ui.main_menu_bar(|| {
         ui.menu(im_str!("File"), true, || {
             if imgui::MenuItem::new(im_str!("Open")).build(ui) {
@@ -45,6 +111,7 @@ pub fn ui<'a, 'ui>(state: &'a mut State, ui: &'a Ui<'ui>, ext_events: &'a mut Ex
         });
         ui.menu(im_str!("View"), true, || {
             view_toggle(&mut state.ui.show_main, im_str!("Main Window"), ui);
+            view_toggle(&mut state.ui.show_scopes, im_str!("Scope Properties"), ui);
             view_toggle(
                 &mut state.ui.show_debug,
                 im_str!("Experimental Options"),
@@ -58,6 +125,7 @@ pub fn ui<'a, 'ui>(state: &'a mut State, ui: &'a Ui<'ui>, ext_events: &'a mut Ex
     let uistate = &mut state.ui;
     let playstate = &mut state.playback;
     let dbgstate = &mut state.debug;
+    let scopes = &mut state.scopes;
 
     if uistate.show_main {
         imgui::Window::new(&im_str!(
@@ -88,6 +156,18 @@ pub fn ui<'a, 'ui>(state: &'a mut State, ui: &'a Ui<'ui>, ext_events: &'a mut Ex
                 *ext_events |= ExternalEvents::REDRAW_SCOPES;
             }
         });
+    }
+
+    if uistate.show_scopes {
+        imgui::Window::new(im_str!("Scope Properties"))
+            .size([320.0, 400.0], imgui::Condition::Always)
+            .resizable(false) // TODO make resizable
+            .opened(&mut uistate.show_scopes)
+            .build(&ui, || {
+                for (name, scope) in scopes.iter_mut() {
+                    scope_editor(name, scope, ui);
+                }
+            });
     }
 
     if uistate.show_debug {
