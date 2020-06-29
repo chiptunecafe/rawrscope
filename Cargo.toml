@@ -24,6 +24,7 @@ imgui-wgpu = "0.7.0"
 log = "0.4.7"
 parking_lot = "0.11.0"
 rayon = { git = "https://github.com/nikomatsakis/rayon", branch = "latch-target-thread-2" }
+rustfft = "3.0.1"
 sample = "0.11.0"
 samplerate = "0.2.1"
 serde = { version = "1.0.104", features = ["derive"] }

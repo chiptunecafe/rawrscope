@@ -7,7 +7,7 @@ use crate::scope::centering;
 #[derive(Deserialize, Serialize)]
 pub struct NoCentering;
 impl centering::Algorithm for NoCentering {
-    fn center(&self, data: &[f32], _: &RangeInclusive<usize>) -> usize {
+    fn center(&mut self, data: &[f32], _: &RangeInclusive<usize>) -> usize {
         data.len() / 2
     }
 }

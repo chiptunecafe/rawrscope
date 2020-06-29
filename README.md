@@ -17,9 +17,9 @@ oscilloscope visualizations of audio, typically chiptune.
 * Realtime editor and preview
 * Antialiased, GPU accelerated line rendering
 * Many centering algorithms
+  * Zero Crossing
   * \*Peak Speed
-  * \*Fundamental Phase
-  * \*Crosscorrelation
+  * Fundamental Phase
   * \*External Trigger
 * \*High-quality trigger generator for external trigger mode
 * Audio manipulation tools (\*trim, fade in/out)
@@ -70,4 +70,3 @@ for details.
 ## Future Roadmap
 
 * Multi-song projects
-* Scripting support

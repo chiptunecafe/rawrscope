@@ -4,7 +4,7 @@ use bitflags::bitflags;
 use imgui::{im_str, Ui};
 use tinyfiledialogs as tfd;
 
-use crate::scope::centering;
+use crate::scope::centering::{self, Algorithm};
 
 bitflags! {
     #[derive(Default)]
@@ -75,7 +75,13 @@ fn scope_editor(name: &str, scope: &mut crate::scope::Scope, ui: &imgui::Ui) {
                 if imgui::Selectable::new(&im_str!("Zero Crossing")).build(ui) {
                     scope.centering = centering::Centering::ZeroCrossing(centering::ZeroCrossing);
                 }
+                if imgui::Selectable::new(&im_str!("Fundamental Phase")).build(ui) {
+                    scope.centering = centering::Centering::FundamentalPhase(
+                        centering::FundamentalPhase::default(),
+                    );
+                }
             });
+        scope.centering.ui(ui);
 
         im_id.pop(ui);
     }

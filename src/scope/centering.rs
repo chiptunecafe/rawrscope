@@ -10,10 +10,14 @@ pub use none::NoCentering;
 mod zero_crossing;
 pub use zero_crossing::ZeroCrossing;
 
+mod fundamental_phase;
+pub use fundamental_phase::FundamentalPhase;
+
 #[delegatable_trait]
 pub trait Algorithm: Serialize + DeserializeOwned {
     // TODO not sure if range is allowed to be inclusive
-    fn center(&self, data: &[f32], center_range: &RangeInclusive<usize>) -> usize;
+    fn center(&mut self, data: &[f32], center_range: &RangeInclusive<usize>) -> usize;
+    fn ui(&mut self, _ui: &imgui::Ui) {}
 }
 
 #[derive(Delegate, Derivative, Deserialize, Serialize)]
@@ -21,6 +25,7 @@ pub trait Algorithm: Serialize + DeserializeOwned {
 pub enum Centering {
     NoCentering(NoCentering),
     ZeroCrossing(ZeroCrossing),
+    FundamentalPhase(FundamentalPhase),
 }
 
 impl std::fmt::Display for Centering {
@@ -28,6 +33,7 @@ impl std::fmt::Display for Centering {
         match self {
             Centering::NoCentering(_) => write!(f, "None"),
             Centering::ZeroCrossing(_) => write!(f, "Zero Crossing"),
+            Centering::FundamentalPhase(_) => write!(f, "Fundamental Phase"),
         }
     }
 }

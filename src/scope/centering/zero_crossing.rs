@@ -7,7 +7,7 @@ use crate::scope::centering;
 #[derive(Deserialize, Serialize)]
 pub struct ZeroCrossing;
 impl centering::Algorithm for ZeroCrossing {
-    fn center(&self, data: &[f32], center_range: &RangeInclusive<usize>) -> usize {
+    fn center(&mut self, data: &[f32], center_range: &RangeInclusive<usize>) -> usize {
         let center = data.len() / 2;
 
         for i in 0..(center_range.end() - center_range.start()) / 2 {
