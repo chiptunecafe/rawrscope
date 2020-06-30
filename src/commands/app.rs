@@ -1,7 +1,13 @@
 use std::panic::{set_hook, take_hook};
-use std::{io, time};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
+use std::{io, thread, time};
 
+use crossbeam_channel as chan;
 use futures::executor::block_on;
+use parking_lot::Mutex;
 use rayon::prelude::*;
 use snafu::{OptionExt, ResultExt, Snafu};
 use ultraviolet as uv;
@@ -107,7 +113,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     let mut state = load_state(state_file);
 
     // create window
-    let event_loop = EventLoop::new();
+    let event_loop = EventLoop::<(wgpu::SwapChainOutput, usize)>::with_user_event();
     let window = WindowBuilder::new()
         .with_inner_size(winit::dpi::PhysicalSize::new(1600.0, 900.0))
         .with_title("rawrscope")
@@ -141,9 +147,28 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
         format: wgpu::TextureFormat::Bgra8Unorm,
         width: window_size.width as u32,
         height: window_size.height as u32,
-        present_mode: wgpu::PresentMode::Immediate,
+        present_mode: wgpu::PresentMode::Fifo,
     };
-    let mut swapchain = device.create_swap_chain(&surface, &swap_desc);
+    let swapchain = Arc::new(Mutex::new(device.create_swap_chain(&surface, &swap_desc)));
+
+    // create swapchain acquisition thread
+    let (get_swapchain, get_swapchain_rx) = chan::bounded(0);
+    let ev_proxy = event_loop.create_proxy();
+    let swapchain_generation = Arc::new(AtomicUsize::new(0));
+    let thread_sc = swapchain.clone();
+    let thread_scg = swapchain_generation.clone();
+    thread::spawn(move || {
+        while get_swapchain_rx.recv().is_ok() {
+            let gen = thread_scg.load(Ordering::SeqCst);
+            let image = thread_sc
+                .lock()
+                .get_next_texture()
+                .expect("swapchain timed out");
+            ev_proxy
+                .send_event((image, gen))
+                .expect("could not send swapchain image");
+        }
+    });
 
     // create and configure master player
     let mut master = playback::Player::new(&config).context(MasterCreation)?;
@@ -190,7 +215,6 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     let mut frame_timer = time::Instant::now();
 
     let mut reprocess = true;
-    let mut redraw = false;
     let mut command_buffers: Vec<wgpu::CommandBuffer> = Vec::new();
 
     event_loop.run(move |event, _, control_flow| {
@@ -213,7 +237,8 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                     swap_desc.width = window_size.width as u32;
                     swap_desc.height = window_size.height as u32;
 
-                    swapchain = device.create_swap_chain(&surface, &swap_desc);
+                    *swapchain.lock() = device.create_swap_chain(&surface, &swap_desc);
+                    swapchain_generation.fetch_add(1, Ordering::SeqCst);
 
                     preview_renderer.update_transform(
                         &device,
@@ -224,10 +249,21 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                 event::WindowEvent::MouseInput { .. }
                 | event::WindowEvent::CursorMoved { .. }
                 | event::WindowEvent::KeyboardInput { .. }
-                | event::WindowEvent::MouseWheel { .. } => redraw = true,
+                | event::WindowEvent::MouseWheel { .. } => window.request_redraw(),
                 _ => {}
             },
             event::Event::RedrawRequested(_) => {
+                if get_swapchain.try_send(()).is_err() {
+                    log::debug!("Could not query for a swapchain image (probably busy)")
+                }
+            }
+            event::Event::UserEvent((swap_frame, generation)) => {
+                // guard against outdated swapchain images
+                if generation != swapchain_generation.load(Ordering::SeqCst) {
+                    std::mem::forget(swap_frame);
+                    return;
+                }
+
                 // update ui
                 let im_ui = imgui.frame();
                 let mut ext_events = ui::ExternalEvents::default();
@@ -246,11 +282,8 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                 // begin rendering
                 let mut encoder: wgpu::CommandEncoder =
                     device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                        label: Some("redraw"),
+                        label: Some("present"),
                     });
-                // FIXME drop frame instead of panicking
-                let swap_frame = swapchain.get_next_texture().expect("swapchain timeout");
-
                 // clear screen
                 {
                     encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -295,10 +328,6 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
             }
             event::Event::NewEvents(event::StartCause::ResumeTimeReached { .. }) => {
                 let now = time::Instant::now();
-
-                if now < scope_timer {
-                    return; // PATCH around winit#1504
-                }
 
                 // create audio submission
                 let sub_builder = master.submission_builder(); // TODO optimize
@@ -427,8 +456,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                     scope_renderer.render(&device, &mut encoder, &state);
                     command_buffers.push(encoder.finish());
 
-                    // request window redraw
-                    redraw = true;
+                    window.request_redraw();
                 }
 
                 // pause when done
@@ -449,12 +477,6 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                 scope_timer += scope_frame_duration;
                 if now.saturating_duration_since(scope_timer) > buffer_duration {
                     scope_timer = now - buffer_duration;
-                }
-            }
-            event::Event::MainEventsCleared => {
-                if redraw {
-                    redraw = false;
-                    window.request_redraw();
                 }
             }
             _ => {}
