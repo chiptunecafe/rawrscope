@@ -126,8 +126,8 @@ impl centering::Algorithm for FundamentalPhase {
         center_range.start() + tau - ((fundamental_phase + PI) / (2.0 * PI) * tau as f32) as usize
     }
 
-    fn ui(&mut self, ui: &imgui::Ui) {
-        imgui::Slider::new(&imgui::im_str!("Threshold"), 0.0..=1.0).build(ui, &mut self.threshold);
+    fn ui(&mut self, ui: &imgui::Ui) -> bool {
+        imgui::Slider::new(&imgui::im_str!("Threshold"), 0.0..=1.0).build(ui, &mut self.threshold)
         /*
         ui.checkbox(
             &imgui::im_str!("Snap to nearest zero crossing"),

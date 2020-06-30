@@ -17,7 +17,9 @@ pub use fundamental_phase::FundamentalPhase;
 pub trait Algorithm: Serialize + DeserializeOwned {
     // TODO not sure if range is allowed to be inclusive
     fn center(&mut self, data: &[f32], center_range: &RangeInclusive<usize>) -> usize;
-    fn ui(&mut self, _ui: &imgui::Ui) {}
+    fn ui(&mut self, _ui: &imgui::Ui) -> bool {
+        false
+    }
 }
 
 #[derive(Delegate, Derivative, Deserialize, Serialize)]

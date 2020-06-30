@@ -20,77 +20,75 @@ fn view_toggle(v: &mut bool, text: &imgui::ImStr, ui: &imgui::Ui) {
     }
 }
 
-fn ms_slider(label: &str, value: &mut f32, ui: &imgui::Ui) {
+fn ms_slider(label: &str, value: &mut f32, ui: &imgui::Ui) -> bool {
     let mut ms = *value * 1000.;
-    imgui::DragFloat::new(ui, &im_str!("{}", label), &mut ms)
+    let changed = imgui::DragFloat::new(ui, &im_str!("{}", label), &mut ms)
         .min(1.0)
         .max(5000.0)
         .display_format(&im_str!("%.2f ms"))
         .build();
     *value = ms / 1000.;
+    changed
 }
 
-fn scope_editor(name: &str, scope: &mut crate::scope::Scope, ui: &imgui::Ui) {
-    if imgui::CollapsingHeader::new(&im_str!("{}", name)).build(ui) {
-        let im_id = ui.push_id(name);
+fn scope_editor(scope: &mut crate::scope::Scope, ui: &imgui::Ui) -> bool {
+    let mut changed = false;
 
-        ui.text("Appearance");
-        ms_slider("Window Size", &mut scope.window_size, ui);
+    ui.text("Appearance");
+    changed |= ms_slider("Window Size", &mut scope.window_size, ui);
 
-        // TODO better ui
-        let mut pos = [scope.rect.x as i32, scope.rect.y as i32];
-        imgui::DragInt2::new(ui, &im_str!("Top Left"), &mut pos)
-            .speed(0.1)
-            .build();
-        scope.rect.x = pos[0] as u32;
-        scope.rect.y = pos[1] as u32;
-        let mut size = [scope.rect.w as i32, scope.rect.h as i32];
-        imgui::DragInt2::new(ui, &im_str!("Bottom Right"), &mut size)
-            .speed(0.1)
-            .build();
-        scope.rect.w = size[0] as u32;
-        scope.rect.h = size[1] as u32;
+    // TODO better ui
+    let mut pos = [scope.rect.x as i32, scope.rect.y as i32];
+    changed |= imgui::DragInt2::new(ui, &im_str!("Top Left"), &mut pos)
+        .speed(0.1)
+        .build();
+    scope.rect.x = pos[0] as u32;
+    scope.rect.y = pos[1] as u32;
+    let mut size = [scope.rect.w as i32, scope.rect.h as i32];
+    changed |= imgui::DragInt2::new(ui, &im_str!("Bottom Right"), &mut size)
+        .speed(0.1)
+        .build();
+    scope.rect.w = size[0] as u32;
+    scope.rect.h = size[1] as u32;
 
-        ui.spacing();
+    ui.spacing();
 
-        ui.text("Style");
-        imgui::DragFloat::new(ui, &im_str!("Line Width"), &mut scope.line_width)
-            .min(0.0)
-            .max(100.0)
-            .speed(0.25)
-            .display_format(&im_str!("%.2f px"))
-            .build();
+    ui.text("Style");
+    changed |= imgui::DragFloat::new(ui, &im_str!("Line Width"), &mut scope.line_width)
+        .min(0.0)
+        .max(100.0)
+        .speed(0.25)
+        .display_format(&im_str!("%.2f px"))
+        .build();
 
-        ui.spacing();
+    ui.spacing();
 
-        ui.text("Centering");
-        ms_slider("Trigger Width", &mut scope.trigger_width, ui);
-        imgui::ComboBox::new(&im_str!("Algorithm"))
-            .preview_value(&im_str!("{}", scope.centering))
-            .build(ui, || {
-                // TODO maybe generate this code
-                if imgui::Selectable::new(&im_str!("None")).build(ui) {
-                    scope.centering = centering::Centering::NoCentering(centering::NoCentering);
-                }
-                if imgui::Selectable::new(&im_str!("Zero Crossing")).build(ui) {
-                    scope.centering = centering::Centering::ZeroCrossing(centering::ZeroCrossing);
-                }
-                if imgui::Selectable::new(&im_str!("Fundamental Phase")).build(ui) {
-                    scope.centering = centering::Centering::FundamentalPhase(
-                        centering::FundamentalPhase::default(),
-                    );
-                }
-            });
-        scope.centering.ui(ui);
+    ui.text("Centering");
+    changed |= ms_slider("Trigger Width", &mut scope.trigger_width, ui);
+    imgui::ComboBox::new(&im_str!("Algorithm"))
+        .preview_value(&im_str!("{}", scope.centering))
+        .build(ui, || {
+            // TODO maybe generate this code
+            if imgui::Selectable::new(&im_str!("None")).build(ui) {
+                scope.centering = centering::Centering::NoCentering(centering::NoCentering);
+                changed = true;
+            }
+            if imgui::Selectable::new(&im_str!("Zero Crossing")).build(ui) {
+                scope.centering = centering::Centering::ZeroCrossing(centering::ZeroCrossing);
+                changed = true;
+            }
+            if imgui::Selectable::new(&im_str!("Fundamental Phase")).build(ui) {
+                scope.centering =
+                    centering::Centering::FundamentalPhase(centering::FundamentalPhase::default());
+                changed = true;
+            }
+        });
+    changed |= scope.centering.ui(ui);
 
-        im_id.pop(ui);
-    }
+    changed
 }
 
 pub fn ui<'a, 'ui>(state: &'a mut State, ui: &'a Ui<'ui>, ext_events: &'a mut ExternalEvents) {
-    // hack
-    *ext_events |= ExternalEvents::REDRAW_SCOPES;
-
     ui.main_menu_bar(|| {
         ui.menu(im_str!("File"), true, || {
             if imgui::MenuItem::new(im_str!("Open")).build(ui) {
@@ -171,7 +169,13 @@ pub fn ui<'a, 'ui>(state: &'a mut State, ui: &'a Ui<'ui>, ext_events: &'a mut Ex
             .opened(&mut uistate.show_scopes)
             .build(&ui, || {
                 for (name, scope) in scopes.iter_mut() {
-                    scope_editor(name, scope, ui);
+                    if imgui::CollapsingHeader::new(&im_str!("{}", name)).build(ui) {
+                        let id = ui.push_id(name);
+                        if scope_editor(scope, ui) {
+                            *ext_events |= ExternalEvents::REDRAW_SCOPES;
+                        }
+                        id.pop(ui);
+                    }
                 }
             });
     }
