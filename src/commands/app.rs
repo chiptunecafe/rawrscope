@@ -439,8 +439,9 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                     if state.debug.multithreaded_centering {
                         state
                             .scopes
-                            .par_iter_mut()
-                            .for_each(|(_, scope)| scope.process());
+                            .values_mut()
+                            .par_bridge()
+                            .for_each(|scope| scope.process());
                     } else {
                         state
                             .scopes

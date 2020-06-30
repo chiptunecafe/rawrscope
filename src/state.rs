@@ -1,9 +1,10 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
 use derivative::Derivative;
+use hashlink::LinkedHashMap;
 use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};
 
@@ -82,7 +83,7 @@ pub struct UiState {
 #[derive(Default, Deserialize, Serialize)]
 pub struct State {
     pub audio_sources: Vec<audio::source::AudioSource>,
-    pub scopes: HashMap<String, scope::Scope>,
+    pub scopes: LinkedHashMap<String, scope::Scope>,
     pub appearance: GlobalAppearance,
 
     #[serde(skip)]

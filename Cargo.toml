@@ -17,6 +17,7 @@ directories-next = "1.0.1"
 fern = { version = "0.6.0", features = ["colored"] }
 futures = "0.3.4"
 git-version = "0.3.4"
+hashlink = { git = "https://github.com/kyren/hashlink", features = ["serde_impl"] }
 hound = "3.4.0"
 imgui = "0.4.0"
 imgui-winit-support = "0.4.0"
