@@ -372,6 +372,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                 }
                 frame_timer = time::Instant::now();
 
+                drop(swap_frame);
                 swapchain.notify_presented();
             }
             event::Event::NewEvents(event::StartCause::ResumeTimeReached { .. }) => {
