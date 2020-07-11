@@ -1,13 +1,9 @@
 use std::panic::{set_hook, take_hook};
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
-};
+use std::sync::Arc;
 use std::{io, thread, time};
 
-use crossbeam_channel as chan;
 use futures::executor::block_on;
-use parking_lot::Mutex;
+use parking_lot::{Condvar, Mutex};
 use rayon::prelude::*;
 use snafu::{OptionExt, ResultExt, Snafu};
 use ultraviolet as uv;
@@ -25,6 +21,76 @@ use crate::config;
 use crate::panic;
 use crate::state::{self, State};
 use crate::ui;
+
+struct AsyncSwapchain {
+    swapchain: Arc<Mutex<(usize, wgpu::SwapChain)>>,
+    thread_handle: thread::JoinHandle<()>,
+    cvar_pair: Arc<(Mutex<bool>, Condvar)>,
+}
+
+impl AsyncSwapchain {
+    fn new(
+        initial_swapchain: wgpu::SwapChain,
+        event_proxy: winit::event_loop::EventLoopProxy<(usize, wgpu::SwapChainOutput)>,
+    ) -> Self {
+        let cvar_pair = Arc::new((Mutex::new(false), Condvar::new()));
+        let swapchain = Arc::new(Mutex::new((0, initial_swapchain)));
+
+        let cvar_pair_2 = cvar_pair.clone();
+        let swapchain_2 = swapchain.clone();
+        let thread_handle = thread::spawn(move || {
+            let &(ref lock, ref cvar) = &*cvar_pair_2;
+            loop {
+                {
+                    let mut image_requested = lock.lock();
+                    if !*image_requested {
+                        cvar.wait(&mut image_requested);
+                    }
+                    *image_requested = false;
+                }
+
+                let (gen, image) = {
+                    let mut swapchain = swapchain_2.lock();
+                    (
+                        swapchain.0,
+                        swapchain.1.get_next_texture().expect("swapchain timed out"),
+                    )
+                };
+                event_proxy
+                    .send_event((gen, image))
+                    .expect("event loop closed");
+
+                thread::park();
+            }
+        });
+
+        Self {
+            swapchain,
+            thread_handle,
+            cvar_pair,
+        }
+    }
+
+    fn generation(&self) -> usize {
+        self.swapchain.lock().0
+    }
+
+    fn notify_presented(&self) {
+        self.thread_handle.thread().unpark();
+    }
+
+    fn replace_swapchain<F: Fn() -> wgpu::SwapChain>(&mut self, builder: F) {
+        let mut swapchain = self.swapchain.lock();
+        swapchain.0 += 1;
+        swapchain.1 = builder();
+    }
+
+    fn request_image(&mut self) {
+        let mut requested = self.cvar_pair.0.lock();
+        *requested = true;
+        self.cvar_pair.1.notify_one();
+    }
+}
 
 // Errors are usually used when the app should quit
 #[derive(Debug, Snafu)]
@@ -113,7 +179,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     let mut state = load_state(state_file);
 
     // create window
-    let event_loop = EventLoop::<(wgpu::SwapChainOutput, usize)>::with_user_event();
+    let event_loop = EventLoop::<(usize, wgpu::SwapChainOutput)>::with_user_event();
     let window = WindowBuilder::new()
         .with_inner_size(winit::dpi::PhysicalSize::new(1600.0, 900.0))
         .with_title("rawrscope")
@@ -149,26 +215,8 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
         height: window_size.height as u32,
         present_mode: wgpu::PresentMode::Fifo,
     };
-    let swapchain = Arc::new(Mutex::new(device.create_swap_chain(&surface, &swap_desc)));
-
-    // create swapchain acquisition thread
-    let (get_swapchain, get_swapchain_rx) = chan::bounded(0);
-    let ev_proxy = event_loop.create_proxy();
-    let swapchain_generation = Arc::new(AtomicUsize::new(0));
-    let thread_sc = swapchain.clone();
-    let thread_scg = swapchain_generation.clone();
-    thread::spawn(move || {
-        while get_swapchain_rx.recv().is_ok() {
-            let gen = thread_scg.load(Ordering::SeqCst);
-            let image = thread_sc
-                .lock()
-                .get_next_texture()
-                .expect("swapchain timed out");
-            ev_proxy
-                .send_event((image, gen))
-                .expect("could not send swapchain image");
-        }
-    });
+    let init_swapchain = device.create_swap_chain(&surface, &swap_desc);
+    let mut swapchain = AsyncSwapchain::new(init_swapchain, event_loop.create_proxy());
 
     // create and configure master player
     let mut master = playback::Player::new(&config).context(MasterCreation)?;
@@ -237,8 +285,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                     swap_desc.width = window_size.width as u32;
                     swap_desc.height = window_size.height as u32;
 
-                    *swapchain.lock() = device.create_swap_chain(&surface, &swap_desc);
-                    swapchain_generation.fetch_add(1, Ordering::SeqCst);
+                    swapchain.replace_swapchain(|| device.create_swap_chain(&surface, &swap_desc));
 
                     preview_renderer.update_transform(
                         &device,
@@ -253,14 +300,13 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                 _ => {}
             },
             event::Event::RedrawRequested(_) => {
-                if get_swapchain.try_send(()).is_err() {
-                    log::debug!("Could not query for a swapchain image (probably busy)")
-                }
+                swapchain.request_image();
             }
-            event::Event::UserEvent((swap_frame, generation)) => {
+            event::Event::UserEvent((generation, swap_frame)) => {
                 // guard against outdated swapchain images
-                if generation != swapchain_generation.load(Ordering::SeqCst) {
+                if generation != swapchain.generation() {
                     std::mem::forget(swap_frame);
+                    swapchain.notify_presented();
                     return;
                 }
 
@@ -325,6 +371,8 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                     state.debug.frametimes.pop_front();
                 }
                 frame_timer = time::Instant::now();
+
+                swapchain.notify_presented();
             }
             event::Event::NewEvents(event::StartCause::ResumeTimeReached { .. }) => {
                 let now = time::Instant::now();
