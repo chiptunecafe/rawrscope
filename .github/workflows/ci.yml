@@ -58,21 +58,14 @@ jobs:
       if: matrix.os == 'windows-latest'
       run: choco install llvm ninja
 
-    - name: Cache cargo registry
-      uses: actions/cache@v1
+    - name: Cache build files
+      uses: actions/cache@v2
       with:
-        path: ~/.cargo/registry
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
         key: test-${{ matrix.os }}-${{ matrix.arch }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-    - name: Cache cargo index
-      uses: actions/cache@v1
-      with:
-        path: ~/.cargo/git
-        key: test-${{ matrix.os }}-${{ matrix.arch }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-    - name: Cache cargo build
-      uses: actions/cache@v1
-      with:
-        path: target
-        key: test-${{ matrix.os }}-${{ matrix.arch }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
 
     - name: Test [x86_64]
       if: matrix.arch == 'x86_64'
@@ -145,21 +138,14 @@ jobs:
       if: matrix.os == 'windows-latest'
       run: choco install llvm ninja
 
-    - name: Cache cargo registry
-      uses: actions/cache@v1
+    - name: Cache build files
+      uses: actions/cache@v2
       with:
-        path: ~/.cargo/registry
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
         key: build-${{ matrix.os }}-${{ matrix.arch }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-    - name: Cache cargo index
-      uses: actions/cache@v1
-      with:
-        path: ~/.cargo/git
-        key: build-${{ matrix.os }}-${{ matrix.arch }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-    - name: Cache cargo build
-      uses: actions/cache@v1
-      with:
-        path: target
-        key: build-${{ matrix.os }}-${{ matrix.arch }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
 
     - name: Build [x86_64]
       if: matrix.arch == 'x86_64'
