@@ -42,4 +42,4 @@ wgpu = "0.5"
 opt-level = 3
 
 [profile.release]
-lto = "fat"
+lto = "thin"
