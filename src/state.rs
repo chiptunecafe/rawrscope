@@ -156,14 +156,15 @@ impl State {
     }
 
     pub fn write<P: AsRef<Path>>(&self, path: P) -> Result<(), WriteError> {
+        let sp = tracing::info_span!("save_project");
+        let _e = sp.enter();
+
         let path = path.as_ref();
         let file = fs::File::create(path).context(CreateError {
             path: path.to_path_buf(),
         })?;
 
         serde_yaml::to_writer(file, self).context(SerializeError)?;
-
-        log::info!("Saved project! ({})", path.display());
 
         Ok(())
     }

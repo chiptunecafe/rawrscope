@@ -44,7 +44,7 @@ fn audio_host(config: &crate::config::Audio) -> cpal::Host {
                 .find(|(_id, n)| n == host_name)
             {
                 cpal::host_from_id(*id).unwrap_or_else(|err| {
-                    log::warn!(
+                    tracing::warn!(
                         "Could not use host \"{}\": {}, using default...",
                         host_name,
                         err
@@ -52,7 +52,7 @@ fn audio_host(config: &crate::config::Audio) -> cpal::Host {
                     cpal::default_host()
                 })
             } else {
-                log::warn!("Host \"{}\" does not exist! Using default...", host_name);
+                tracing::warn!("Host \"{}\" does not exist! Using default...", host_name);
                 cpal::default_host()
             }
         }
@@ -74,7 +74,7 @@ fn audio_device(
             }) {
                 Some(d) => Ok(d),
                 None => {
-                    log::warn!(
+                    tracing::warn!(
                         "Output device \"{}\" does not exist ... using default",
                         dev_name
                     );
@@ -83,7 +83,7 @@ fn audio_device(
                 }
             },
             Err(e) => {
-                log::warn!(
+                tracing::warn!(
                     "Failed to query output devices: {} ... attempting to use default",
                     e
                 );
@@ -107,7 +107,11 @@ pub struct Player {
 
 impl Player {
     pub fn new(config: &crate::config::Config) -> Result<Self, CreateError> {
+        let sp = tracing::debug_span!("create_player");
+        let _e = sp.enter();
+
         let config = config.audio.clone();
+        tracing::debug!("Initializing audio device");
         let (host, device, format) = thread::Builder::new()
             .name("audio init".into())
             .spawn(move || {
@@ -131,12 +135,15 @@ impl Player {
         let submission_builder = mixer.submission_builder();
         let mixer_stream = Arc::new(Mutex::new(mixer.into_stream()));
 
-        log::debug!("Starting audio thread: format={:?}", format);
+        tracing::debug!(format = ?format, "Starting audio thread");
         let audio_stream = mixer_stream.clone();
         let thr_format = format.clone();
         let audio_thread = thread::Builder::new()
             .name("audio playback".into())
             .spawn(move || {
+                let sp = tracing::debug_span!("audio_thread");
+                let _e = sp.enter();
+
                 let ev = host.event_loop();
                 let res: Result<(), CreateError> = (move || {
                     let stream_id = ev
@@ -149,7 +156,7 @@ impl Player {
                         let stream_data = match stream_res {
                             Ok(data) => data,
                             Err(err) => {
-                                log::error!("Audio playback stream error: {}", err);
+                                tracing::error!("Audio playback stream error: {}", err);
                                 return;
                             }
                         };
@@ -184,7 +191,7 @@ impl Player {
                 })();
 
                 if let Err(e) = res {
-                    log::error!("Unexpected audio thread error! {}", e);
+                    tracing::error!("Unexpected audio thread error! {}", e);
                 }
             })
             .context(ThreadError)?;
@@ -212,8 +219,6 @@ impl Player {
     }
 
     pub fn rebuild_mixer(&mut self, builder: mixer::MixerBuilder) -> Result<(), samplerate::Error> {
-        log::debug!("Rebuilding master mixer...");
-
         let (submission_queue, sub_rx) = crossbeam_channel::unbounded();
         let mixer = builder.build(sub_rx.into_iter())?;
         let submission_builder = mixer.submission_builder();

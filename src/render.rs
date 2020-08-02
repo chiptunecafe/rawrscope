@@ -47,6 +47,9 @@ impl<'a> DynamicBuffer<'a> {
         usage: wgpu::BufferUsage,
         bind_fn: &dyn Fn(&wgpu::Buffer) -> wgpu::BindGroup,
     ) {
+        let sp = tracing::trace_span!("upload_data", buf = %self.label);
+        let _e = sp.enter();
+
         match self.buffer.as_mut() {
             Some(db) if db.len == data.len() => {
                 if data.len() == db.len {
@@ -56,16 +59,16 @@ impl<'a> DynamicBuffer<'a> {
             }
             _ => {
                 if self.buffer.is_some() {
-                    log::info!(
-                        "Resizing DynamicBuffer {}; newsize={}",
-                        self.label,
-                        data.len()
+                    tracing::debug!(
+                        buf = %self.label,
+                        len = data.len(),
+                        "Resizing DynamicBuffer",
                     );
                 } else {
-                    log::info!(
-                        "Initializing DynamicBuffer {}; size={}",
-                        self.label,
-                        data.len()
+                    tracing::debug!(
+                        buf = %self.label,
+                        len = data.len(),
+                        "Initializing DynamicBuffer",
                     );
                 }
 
@@ -83,7 +86,7 @@ impl<'a> DynamicBuffer<'a> {
     }
 
     fn clear(&mut self) {
-        log::info!("Clearing DynamicBuffer {}", self.label);
+        tracing::debug!(buf = %self.label, "Clearing DynamicBuffer");
         self.buffer.take();
     }
 }
@@ -107,6 +110,9 @@ pub struct Renderer {
 
 impl Renderer {
     pub fn new(device: &wgpu::Device, queue: &mut wgpu::Queue) -> Self {
+        let sp = tracing::debug_span!("new_scope_renderer");
+        let _e = sp.enter();
+
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("scope render init"),
         });
@@ -265,6 +271,9 @@ impl Renderer {
         encoder: &mut wgpu::CommandEncoder,
         state: &crate::state::State,
     ) {
+        let sp = tracing::trace_span!("render_scopes");
+        let _e = sp.enter();
+
         let grid_cell_width = 2.0 / state.appearance.grid_columns as f32;
         let grid_cell_height = 2.0 / state.appearance.grid_rows as f32;
 
@@ -279,6 +288,8 @@ impl Renderer {
         let mut line_uniforms = Vec::new();
         let mut line_render_info = Vec::new();
 
+        let sp = tracing::trace_span!("update_data");
+        let update_entered = sp.enter();
         for scope in state.scopes.values() {
             let out = scope.output();
 
@@ -306,6 +317,7 @@ impl Renderer {
             line_uniforms.push(uniform);
             line_render_info.push(render_info);
         }
+        drop(update_entered);
 
         // update line ssbo and uniforms
         if !state.scopes.is_empty() {

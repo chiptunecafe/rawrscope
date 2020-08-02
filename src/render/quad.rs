@@ -43,6 +43,9 @@ impl QuadRenderer {
         color_format: wgpu::TextureFormat,
         transform: uv::Mat4,
     ) -> Self {
+        let sp = tracing::debug_span!("new_quad_renderer");
+        let _e = sp.enter();
+
         // create buffers
         let vertex_buf = device
             .create_buffer_with_data(bytemuck::bytes_of(&QUAD_VERTS), wgpu::BufferUsage::VERTEX);
@@ -195,6 +198,9 @@ impl QuadRenderer {
         target: &wgpu::TextureView,
         clear: Option<wgpu::Color>,
     ) {
+        let sp = tracing::trace_span!("render_quad");
+        let _e = sp.enter();
+
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
                 attachment: target,
@@ -222,6 +228,9 @@ impl QuadRenderer {
         queue: &mut wgpu::Queue,
         transform: uv::Mat4,
     ) {
+        let sp = tracing::debug_span!("update_quad_transform");
+        let _e = sp.enter();
+
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("quad render transform update"),
         });

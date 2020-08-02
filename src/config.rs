@@ -51,10 +51,13 @@ impl Config {
     }
 
     pub fn load() -> Self {
+        let sp = tracing::debug_span!("load_config");
+        let _e = sp.enter();
+
         let mut path = match Config::config_dir() {
             Ok(p) => p,
             Err(_) => {
-                log::warn!("No suitable home directory found! Using default config...");
+                tracing::warn!("No suitable home directory found! Using default config...");
                 return Default::default();
             }
         }
@@ -65,25 +68,25 @@ impl Config {
         let mut file = match fs::File::open(path) {
             Ok(f) => f,
             Err(ref e) if e.kind() == io::ErrorKind::NotFound => {
-                log::debug!("No config found... using default");
+                tracing::debug!("No config found... using default");
                 return Default::default();
             }
             Err(e) => {
-                log::warn!("Failed to load config: {} ... using default", e);
+                tracing::warn!(err = %e, "Failed to load config... using default");
                 return Default::default();
             }
         };
 
         let mut buffer = Vec::new();
         if let Err(e) = file.read_to_end(&mut buffer) {
-            log::warn!("Failed to read config: {} ... using default", e);
+            tracing::warn!(err = %e, "Failed to read config... using default");
             return Default::default();
         }
 
         match toml::from_slice(&buffer) {
             Ok(config) => config,
             Err(e) => {
-                log::warn!("Failed to parse config: {} ... using default", e);
+                tracing::warn!(err = %e, "Failed to parse config... using default");
                 Default::default()
             }
         }

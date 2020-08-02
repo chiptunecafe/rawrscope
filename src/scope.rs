@@ -108,7 +108,7 @@ impl Scope {
         let trigger_pad = (self.audio.len() - trigger_samples) / 2;
         let trigger_range = trigger_pad..=self.audio.len() - trigger_pad;
 
-        let center = self.centering.center(&mut self.audio, &trigger_range);
+        let center = self.centering.center(&self.audio, &trigger_range);
         assert!(trigger_range.contains(&center));
 
         self.center_offset = center - output_size / 2;

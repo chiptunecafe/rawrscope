@@ -44,6 +44,9 @@ pub struct AudioSource {
 
 impl AudioSource {
     pub fn load(&mut self) -> Result<(), LoadError> {
+        let sp = tracing::trace_span!("load_source", source = %self.path.file_name().unwrap().to_string_lossy());
+        let _e = sp.enter();
+
         let file = fs::File::open(&self.path).context(OpenError {
             path: self.path.clone(),
         })?;
@@ -104,6 +107,7 @@ impl<'a> AsLoaded<'a> {
     }
 
     pub fn chunk_at(&mut self, pos: u32, len: usize) -> Result<Vec<f32>, ReadError> {
+        tracing::trace!(pos = pos, "Seeking WavReader");
         self.wav_reader.seek(pos).context(SeekError { pos })?;
         *self.reader_position = pos;
         self.next_chunk(len)
@@ -138,6 +142,9 @@ impl<'a> AsLoaded<'a> {
     pub fn next_chunk(&mut self, len: usize) -> Result<Vec<f32>, ReadError> {
         let spec = self.spec();
         let total_len = self.len();
+
+        let sp = tracing::trace_span!("get_chunk", len = total_len);
+        let _e = sp.enter();
 
         let chunk = match self.spec().sample_format {
             hound::SampleFormat::Int => match self.spec().bits_per_sample {

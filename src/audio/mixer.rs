@@ -8,6 +8,8 @@ pub struct SubmissionBuilder {
 impl SubmissionBuilder {
     /// length is in secs
     pub fn create(&self, length: f32) -> Submission {
+        tracing::trace!(length = %length, "Creating new mixer submission");
+
         let mut streams = HashMap::new();
 
         for rate in &self.rates {
@@ -33,8 +35,11 @@ pub struct Submission {
 
 impl Submission {
     pub fn add<I: IntoIterator<Item = f32>>(&mut self, rate: u32, channel: usize, samples: I) {
+        let sp = tracing::trace_span!("write_to_submission");
+        let _e = sp.enter();
+
         if channel >= self.channels {
-            log::warn!(
+            tracing::warn!(
                 "Writing to nonexistent channel {}, previous channels will be overwritten!",
                 channel
             );
@@ -47,7 +52,7 @@ impl Submission {
                     *v += sample_iter.next().unwrap_or(0.0);
                 }
             }
-            None => log::warn!("Submission has no {}hz stream!", rate),
+            None => tracing::warn!("Submission has no {}hz stream!", rate),
         }
     }
 
@@ -100,10 +105,13 @@ impl MixerBuilder {
         self,
         source: I,
     ) -> Result<Mixer<I>, samplerate::Error> {
+        let sp = tracing::trace_span!("build_mixer");
+        let _e = sp.enter();
+
         let sample_rate = match self.sample_rate {
             Some(r) => r,
             None => *self.source_rates.iter().max().unwrap_or_else(|| {
-                log::warn!("Mixer was given no source sample rates! Defaulting to 44100...");
+                tracing::warn!("Mixer was given no source sample rates! Defaulting to 44100...");
                 &44100
             }),
         };
