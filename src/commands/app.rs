@@ -380,7 +380,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                 // process external events
                 if ext_events.contains(ui::ExternalEvents::REBUILD_MASTER) {
                     if let Err(e) = rebuild_master(&mut master, &mut state) {
-                        log::warn!("Failed to rebuild master mixer: {}", e);
+                        tracing::warn!("Failed to rebuild master mixer: {}", e);
                     }
                 }
                 if ext_events.contains(ui::ExternalEvents::REDRAW_SCOPES) {

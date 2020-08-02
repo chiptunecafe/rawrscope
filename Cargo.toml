@@ -21,7 +21,6 @@ hound = "3"
 imgui = "0.4"
 imgui-winit-support = "0.4"
 imgui-wgpu = "0.7"
-log = "0.4"
 parking_lot = "0.11"
 rayon = { git = "https://github.com/nikomatsakis/rayon", branch = "latch-target-thread-2" }
 rustfft = "3"
