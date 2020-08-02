@@ -16,6 +16,12 @@ pub enum ReadError {
     #[snafu(display("Failed to open project from {}: {}", path.display(), source))]
     OpenError { path: PathBuf, source: io::Error },
 
+    #[snafu(display("Failed to canonicalize project path: {}", source))]
+    PathError { source: io::Error },
+
+    #[snafu(display("Failed to move into project directory: {}", source))]
+    EnvError { source: io::Error },
+
     #[snafu(display("Failed to parse project: {}", source))]
     ParseError { source: serde_yaml::Error },
 }
@@ -103,14 +109,19 @@ impl State {
         path: P,
     ) -> Result<(Self, Vec<Box<dyn std::error::Error>>), ReadError> {
         let mut warnings = Vec::<Box<dyn std::error::Error>>::new();
-
         let path = path.as_ref();
+
+        let canonical_path = path.canonicalize().context(PathError)?;
+
         let file = fs::File::open(path).context(OpenError {
             path: path.to_path_buf(),
         })?;
 
+        // TODO apply this whenever path changes (part of new state management)
+        std::env::set_current_dir(canonical_path.parent().unwrap()).context(EnvError)?;
+
         let mut state: State = serde_yaml::from_reader(file).context(ParseError)?;
-        state.file_path = path.to_path_buf();
+        state.file_path = canonical_path;
 
         // load audio sources
         warnings.extend(
