@@ -5,6 +5,32 @@ use derivative::Derivative;
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, ResultExt, Snafu};
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VideoBackend {
+    Primary,
+    Secondary,
+    Vulkan,
+    Gl,
+    Metal,
+    Dx12,
+    Dx11,
+}
+
+impl VideoBackend {
+    pub fn to_wgpu_backend(&self) -> wgpu::BackendBit {
+        match self {
+            VideoBackend::Primary => wgpu::BackendBit::PRIMARY,
+            VideoBackend::Secondary => wgpu::BackendBit::SECONDARY,
+            VideoBackend::Vulkan => wgpu::BackendBit::VULKAN,
+            VideoBackend::Gl => wgpu::BackendBit::GL,
+            VideoBackend::Metal => wgpu::BackendBit::METAL,
+            VideoBackend::Dx12 => wgpu::BackendBit::DX12,
+            VideoBackend::Dx11 => wgpu::BackendBit::DX11,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Derivative, Deserialize, Serialize)]
 #[derivative(Default)]
 #[serde(default)]
@@ -18,7 +44,10 @@ pub struct Audio {
 #[derive(Clone, Debug, Derivative, Deserialize, Serialize)]
 #[derivative(Default)]
 #[serde(default)]
-pub struct Video {}
+pub struct Video {
+    #[derivative(Default(value = "VideoBackend::Primary"))]
+    pub backend: VideoBackend,
+}
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default)]

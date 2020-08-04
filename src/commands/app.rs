@@ -222,7 +222,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
             power_preference: wgpu::PowerPreference::HighPerformance, // maybe do not request high perf
             compatible_surface: Some(&surface),
         },
-        wgpu::BackendBit::PRIMARY,
+        config.video.backend.to_wgpu_backend(),
     ))
     .context(AdapterSelection)?;
 
