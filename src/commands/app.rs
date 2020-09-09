@@ -31,7 +31,7 @@ struct AsyncSwapchain {
 impl AsyncSwapchain {
     fn new(
         initial_swapchain: wgpu::SwapChain,
-        event_proxy: winit::event_loop::EventLoopProxy<(usize, wgpu::SwapChainOutput)>,
+        event_proxy: winit::event_loop::EventLoopProxy<(usize, wgpu::SwapChainFrame)>,
     ) -> Self {
         let cvar_pair = Arc::new((Mutex::new(false), Condvar::new()));
         let swapchain = Arc::new(Mutex::new((0, initial_swapchain)));
@@ -59,7 +59,10 @@ impl AsyncSwapchain {
                     let mut swapchain = swapchain_2.lock();
                     (
                         swapchain.0,
-                        swapchain.1.get_next_texture().expect("swapchain timed out"),
+                        swapchain
+                            .1
+                            .get_current_frame()
+                            .expect("swapchain timed out"),
                     )
                 };
                 event_proxy
@@ -113,6 +116,9 @@ enum Error {
     #[snafu(display("No sufficient graphics card available!"))]
     AdapterSelection,
 
+    #[snafu(display("Failed to request a wgpu device: {}", source))]
+    DeviceRequest { source: wgpu::RequestDeviceError },
+
     #[snafu(display("Failed to create master audio player: {}", source))]
     MasterCreation { source: playback::CreateError },
 }
@@ -157,10 +163,10 @@ fn preview_transform(window_res: (u32, u32), scope_res: (u32, u32)) -> uv::Mat4 
 
     if scope_ratio > window_ratio {
         // letterbox
-        uv::Mat4::from_nonuniform_scale(uv::Vec4::new(1.0, window_ratio / scope_ratio, 1.0, 1.0))
+        uv::Mat4::from_nonuniform_scale(uv::Vec3::new(1.0, window_ratio / scope_ratio, 1.0))
     } else {
         // pillarbox
-        uv::Mat4::from_nonuniform_scale(uv::Vec4::new(scope_ratio / window_ratio, 1.0, 1.0, 1.0))
+        uv::Mat4::from_nonuniform_scale(uv::Vec3::new(scope_ratio / window_ratio, 1.0, 1.0))
     }
 }
 
@@ -203,7 +209,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     // create window
     let sp = tracing::debug_span!("window");
     let win_entered = sp.enter();
-    let event_loop = EventLoop::<(usize, wgpu::SwapChainOutput)>::with_user_event();
+    let event_loop = EventLoop::<(usize, wgpu::SwapChainFrame)>::with_user_event();
     let window = WindowBuilder::new()
         .with_inner_size(winit::dpi::PhysicalSize::new(1600.0, 900.0))
         .with_title("rawrscope")
@@ -216,22 +222,25 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     // initialize wgpu adapter and device
     let sp = tracing::debug_span!("gpu");
     let gpu_entered = sp.enter();
-    let surface = wgpu::Surface::create(&window);
-    let adapter = block_on(wgpu::Adapter::request(
-        &wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance, // maybe do not request high perf
-            compatible_surface: Some(&surface),
-        },
-        config.video.backend.to_wgpu_backend(),
-    ))
+
+    let instance = wgpu::Instance::new(config.video.backend.to_wgpu_backend());
+    let surface = unsafe { instance.create_surface(&window) };
+
+    let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance, // maybe do not request high perf
+        compatible_surface: Some(&surface),
+    }))
     .context(AdapterSelection)?;
 
-    let (device, mut queue) = block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-        extensions: wgpu::Extensions {
-            anisotropic_filtering: false,
+    let (device, mut queue) = block_on(adapter.request_device(
+        &wgpu::DeviceDescriptor {
+            features: wgpu::Features::empty(),
+            limits: wgpu::Limits::default(),
+            shader_validation: true,
         },
-        limits: wgpu::Limits::default(),
-    }));
+        None,
+    ))
+    .context(DeviceRequest)?;
     drop(gpu_entered);
 
     // create swapchain
@@ -282,7 +291,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
     let sp = tracing::debug_span!("renderers");
     let renderers_init_entered = sp.enter();
     let mut imgui_renderer =
-        imgui_wgpu::Renderer::new(&mut imgui, &device, &mut queue, swap_desc.format, None);
+        imgui_wgpu::Renderer::new(&mut imgui, &device, &queue, swap_desc.format);
 
     let mut scope_renderer = crate::render::Renderer::new(&device, &mut queue);
     let preview_renderer = crate::render::quad::QuadRenderer::new(
@@ -337,7 +346,6 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                     swapchain.replace_swapchain(|| device.create_swap_chain(&surface, &swap_desc));
 
                     preview_renderer.update_transform(
-                        &device,
                         &mut queue,
                         preview_transform(size.into(), (1920, 1080)),
                     );
@@ -396,41 +404,37 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                     device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                         label: Some("present"),
                     });
-                // clear screen
+
+                // clear screen and draw ui
                 {
-                    encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    let sp = tracing::trace_span!("ui");
+                    let _ui_render_entered = sp.enter();
+
+                    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                         color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                            attachment: &swap_frame.view,
+                            attachment: &swap_frame.output.view,
                             resolve_target: None,
-                            load_op: wgpu::LoadOp::Clear,
-                            store_op: wgpu::StoreOp::Store,
-                            clear_color: wgpu::Color {
-                                r: 0.3,
-                                g: 0.3,
-                                b: 0.3,
-                                a: 1.0,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.3, g: 0.3, b: 0.3, a: 1.0 }),
+                                store: true,
                             },
                         }],
                         depth_stencil_attachment: None,
                     });
+
+                    // copy scopes to screen
+                    preview_renderer.render(&mut pass);
+
+                    imgui_plat.prepare_render(&im_ui, &window);
+                    imgui_renderer
+                        .render(im_ui.render(), &queue, &device, &mut pass)
+                        .expect("Failed to render UI"); // TODO do not expect
                 }
-
-                // copy scopes to screen
-                preview_renderer.render(&mut encoder, &swap_frame.view, None);
-
-                // render ui
-                let sp = tracing::trace_span!("imgui");
-                let imgui_render_entered = sp.enter();
-                imgui_plat.prepare_render(&im_ui, &window);
-                imgui_renderer
-                    .render(im_ui.render(), &device, &mut encoder, &swap_frame.view)
-                    .expect("Failed to render UI"); // TODO do not expect
-                drop(imgui_render_entered);
 
                 // finish rendering
                 command_buffers.push(encoder.finish());
                 tracing::debug!(n_buffers = command_buffers.len(), "Submitting all pending command buffers");
-                queue.submit(&command_buffers.split_off(0));
+                queue.submit(command_buffers.split_off(0));
 
                 // write frametime to state
                 state
@@ -587,7 +591,7 @@ fn _run(state_file: Option<&str>) -> Result<(), Error> {
                         device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                             label: Some("scope render"),
                         });
-                    scope_renderer.render(&device, &mut encoder, &state);
+                    scope_renderer.render(&device, &queue, &mut encoder, &state);
                     command_buffers.push(encoder.finish());
 
                     tracing::trace!("Submitting winit redraw request");

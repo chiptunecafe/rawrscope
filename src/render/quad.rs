@@ -1,5 +1,6 @@
 use ultraviolet as uv;
 use vk_shader_macros::include_glsl;
+use wgpu::util::{self as wgu, DeviceExt};
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -13,19 +14,19 @@ unsafe impl bytemuck::Pod for Vertex {}
 const QUAD_VERTS: [Vertex; 4] = [
     Vertex {
         pos: [-1.0, -1.0, 0.0],
-        tex_coord: [0.0, 0.0],
-    },
-    Vertex {
-        pos: [1.0, -1.0, 0.0],
-        tex_coord: [1.0, 0.0],
-    },
-    Vertex {
-        pos: [-1.0, 1.0, 0.0],
         tex_coord: [0.0, 1.0],
     },
     Vertex {
-        pos: [1.0, 1.0, 0.0],
+        pos: [1.0, -1.0, 0.0],
         tex_coord: [1.0, 1.0],
+    },
+    Vertex {
+        pos: [-1.0, 1.0, 0.0],
+        tex_coord: [0.0, 0.0],
+    },
+    Vertex {
+        pos: [1.0, 1.0, 0.0],
+        tex_coord: [1.0, 0.0],
     },
 ];
 
@@ -47,17 +48,22 @@ impl QuadRenderer {
         let _e = sp.enter();
 
         // create buffers
-        let vertex_buf = device
-            .create_buffer_with_data(bytemuck::bytes_of(&QUAD_VERTS), wgpu::BufferUsage::VERTEX);
+        let vertex_buf = device.create_buffer_init(&wgu::BufferInitDescriptor {
+            label: Some("quad vertex buffer"),
+            contents: bytemuck::bytes_of(&QUAD_VERTS),
+            usage: wgpu::BufferUsage::VERTEX,
+        });
 
         let transform_slice = transform.as_slice();
-        let uniform_buf = device.create_buffer_with_data(
-            bytemuck::cast_slice(transform_slice),
-            wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
-        );
+        let uniform_buf = device.create_buffer_init(&wgu::BufferInitDescriptor {
+            label: Some("quad uniform buffer"),
+            contents: bytemuck::cast_slice(transform_slice),
+            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+        });
 
         // create sampler
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("quad texture sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
@@ -66,20 +72,30 @@ impl QuadRenderer {
             mipmap_filter: wgpu::FilterMode::Linear,
             lod_min_clamp: -100.0,
             lod_max_clamp: 100.0,
-            compare: wgpu::CompareFunction::Always,
+            compare: None,
+            anisotropy_clamp: None,
         });
 
         // load shaders
-        let vs_module = device.create_shader_module(include_glsl!("shaders/quad.vert"));
-        let fs_module = device.create_shader_module(include_glsl!("shaders/quad.frag"));
+        // TODO should we cache these?
+        let vs_module = device.create_shader_module(wgpu::ShaderModuleSource::SpirV(
+            include_glsl!("shaders/quad.vert")[..].into(),
+        ));
+        let fs_module = device.create_shader_module(wgpu::ShaderModuleSource::SpirV(
+            include_glsl!("shaders/quad.frag")[..].into(),
+        ));
 
         // create pipeline layout
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            bindings: &[
+            entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStage::VERTEX,
-                    ty: wgpu::BindingType::UniformBuffer { dynamic: false },
+                    ty: wgpu::BindingType::UniformBuffer {
+                        dynamic: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
@@ -89,36 +105,37 @@ impl QuadRenderer {
                         component_type: wgpu::TextureComponentType::Float,
                         dimension: wgpu::TextureViewDimension::D2,
                     },
+                    count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
                     visibility: wgpu::ShaderStage::FRAGMENT,
                     ty: wgpu::BindingType::Sampler { comparison: false },
+                    count: None,
                 },
             ],
             label: Some("quad bind layout"),
         });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("quad pipeline layout"),
             bind_group_layouts: &[&bind_group_layout],
+            push_constant_ranges: &[],
         });
 
         // create bind group
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &bind_group_layout,
-            bindings: &[
-                wgpu::Binding {
+            entries: &[
+                wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &uniform_buf,
-                        range: 0..(transform_slice.len() * 4) as u64,
-                    },
+                    resource: wgpu::BindingResource::Buffer(uniform_buf.slice(..)),
                 },
-                wgpu::Binding {
+                wgpu::BindGroupEntry {
                     binding: 1,
                     resource: wgpu::BindingResource::TextureView(tex_view),
                 },
-                wgpu::Binding {
+                wgpu::BindGroupEntry {
                     binding: 2,
                     resource: wgpu::BindingResource::Sampler(&sampler),
                 },
@@ -128,7 +145,7 @@ impl QuadRenderer {
 
         // create pipeline
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            layout: &pipeline_layout,
+            layout: Some(&pipeline_layout),
             vertex_stage: wgpu::ProgrammableStageDescriptor {
                 module: &vs_module,
                 entry_point: "main",
@@ -140,6 +157,7 @@ impl QuadRenderer {
             rasterization_state: Some(wgpu::RasterizationStateDescriptor {
                 front_face: wgpu::FrontFace::Cw,
                 cull_mode: wgpu::CullMode::None,
+                clamp_depth: false,
                 depth_bias: 0,
                 depth_bias_slope_scale: 0.0,
                 depth_bias_clamp: 0.0,
@@ -182,6 +200,7 @@ impl QuadRenderer {
             sample_count: 1,
             sample_mask: !0,
             alpha_to_coverage_enabled: false,
+            label: Some("quad pipeline"),
         });
 
         QuadRenderer {
@@ -192,63 +211,25 @@ impl QuadRenderer {
         }
     }
 
-    pub fn render(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        target: &wgpu::TextureView,
-        clear: Option<wgpu::Color>,
-    ) {
+    pub fn render<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) {
         let sp = tracing::trace_span!("render_quad");
         let _e = sp.enter();
 
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                attachment: target,
-                resolve_target: None,
-                load_op: if clear.is_some() {
-                    wgpu::LoadOp::Clear
-                } else {
-                    wgpu::LoadOp::Load
-                },
-                store_op: wgpu::StoreOp::Store,
-                clear_color: clear.unwrap_or(wgpu::Color::BLACK),
-            }],
-            depth_stencil_attachment: None,
-        });
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.bind_group, &[]);
-        pass.set_vertex_buffer(0, &self.vertex_buf, 0, 0);
+        pass.set_vertex_buffer(0, self.vertex_buf.slice(..));
 
         pass.draw(0..4, 0..1);
     }
 
-    pub fn update_transform(
-        &self,
-        device: &wgpu::Device,
-        queue: &mut wgpu::Queue,
-        transform: uv::Mat4,
-    ) {
+    pub fn update_transform(&self, queue: &mut wgpu::Queue, transform: uv::Mat4) {
         let sp = tracing::debug_span!("update_quad_transform");
         let _e = sp.enter();
 
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("quad render transform update"),
-        });
-
-        let transform_slice = transform.as_slice();
-        let staging_buf = device.create_buffer_with_data(
-            bytemuck::cast_slice(transform_slice),
-            wgpu::BufferUsage::COPY_SRC,
-        );
-
-        encoder.copy_buffer_to_buffer(
-            &staging_buf,
-            0,
+        queue.write_buffer(
             &self.uniform_buf,
             0,
-            (transform_slice.len() * 4) as u64,
+            bytemuck::cast_slice(transform.as_slice()),
         );
-
-        queue.submit(&[encoder.finish()]);
     }
 }

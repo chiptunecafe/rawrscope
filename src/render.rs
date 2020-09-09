@@ -1,7 +1,9 @@
+// TODO use wgu::StagingBelt for uploading data
 pub mod quad;
 
 use ultraviolet as uv;
 use vk_shader_macros::include_glsl;
+use wgpu::util::{self as wgu, DeviceExt};
 
 // TODO FIX CURSED STRUCT ALIGNMENT
 // needed for dynamic bind offsets
@@ -42,7 +44,7 @@ impl<'a> DynamicBuffer<'a> {
     fn upload(
         &mut self,
         device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
+        queue: &wgpu::Queue,
         data: &[u8],
         usage: wgpu::BufferUsage,
         bind_fn: &dyn Fn(&wgpu::Buffer) -> wgpu::BindGroup,
@@ -53,8 +55,7 @@ impl<'a> DynamicBuffer<'a> {
         match self.buffer.as_mut() {
             Some(db) if db.len == data.len() => {
                 if data.len() == db.len {
-                    let staging = device.create_buffer_with_data(data, wgpu::BufferUsage::COPY_SRC);
-                    encoder.copy_buffer_to_buffer(&staging, 0, &db.buf, 0, db.len as u64);
+                    queue.write_buffer(&db.buf, 0, data);
                 }
             }
             _ => {
@@ -72,8 +73,11 @@ impl<'a> DynamicBuffer<'a> {
                     );
                 }
 
-                let buffer =
-                    device.create_buffer_with_data(data, usage | wgpu::BufferUsage::COPY_DST);
+                let buffer = device.create_buffer_init(&wgu::BufferInitDescriptor {
+                    contents: data,
+                    usage: usage | wgpu::BufferUsage::COPY_DST,
+                    label: Some(self.label),
+                });
                 let binding = bind_fn(&buffer);
 
                 self.buffer = Some(BufferExt {
@@ -123,7 +127,6 @@ impl Renderer {
                 height: 1080,
                 depth: 1,
             },
-            array_layer_count: 1,
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -132,38 +135,50 @@ impl Renderer {
             label: Some("scope line intermediate texture"),
         });
 
-        let line_vs = device.create_shader_module(include_glsl!("shaders/line.vert"));
-        let line_fs = device.create_shader_module(include_glsl!("shaders/line.frag"));
+        let line_vs = device.create_shader_module(wgpu::ShaderModuleSource::SpirV(
+            include_glsl!("shaders/line.vert")[..].into(),
+        ));
+        let line_fs = device.create_shader_module(wgpu::ShaderModuleSource::SpirV(
+            include_glsl!("shaders/line.frag")[..].into(),
+        ));
 
         let line_ssbo_bind_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                bindings: &[wgpu::BindGroupLayoutEntry {
+                entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStage::VERTEX,
                     ty: wgpu::BindingType::StorageBuffer {
                         dynamic: false,
                         readonly: true,
+                        min_binding_size: None,
                     },
+                    count: None,
                 }],
                 label: Some("scope line ssbo bind layout"),
             });
 
         let line_uniform_bind_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                bindings: &[wgpu::BindGroupLayoutEntry {
+                entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
-                    ty: wgpu::BindingType::UniformBuffer { dynamic: true },
+                    ty: wgpu::BindingType::UniformBuffer {
+                        dynamic: true,
+                        min_binding_size: None,
+                    },
+                    count: None,
                 }],
                 label: Some("scope uniform bind layout"),
             });
 
         let line_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             bind_group_layouts: &[&line_ssbo_bind_layout, &line_uniform_bind_layout],
+            push_constant_ranges: &[],
+            label: Some("line pipeline layout"),
         });
 
         let line_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            layout: &line_pipeline_layout,
+            layout: Some(&line_pipeline_layout),
             vertex_stage: wgpu::ProgrammableStageDescriptor {
                 module: &line_vs,
                 entry_point: "main",
@@ -175,6 +190,7 @@ impl Renderer {
             rasterization_state: Some(wgpu::RasterizationStateDescriptor {
                 front_face: wgpu::FrontFace::Cw,
                 cull_mode: wgpu::CullMode::None,
+                clamp_depth: false,
                 depth_bias: 0,
                 depth_bias_slope_scale: 0.0,
                 depth_bias_clamp: 0.0,
@@ -198,6 +214,7 @@ impl Renderer {
             sample_count: 1,
             sample_mask: !0,
             alpha_to_coverage_enabled: false,
+            label: Some("line pipeline"),
         });
 
         let line_ssbo = DynamicBuffer::new("scope line ssbo");
@@ -205,7 +222,7 @@ impl Renderer {
 
         let line_copy = quad::QuadRenderer::new(
             &device,
-            &line_texture.create_default_view(),
+            &line_texture.create_view(&wgpu::TextureViewDescriptor::default()),
             wgpu::TextureFormat::Rgba8UnormSrgb,
             uv::Mat4::identity(),
         );
@@ -216,7 +233,6 @@ impl Renderer {
                 height: 1080,
                 depth: 1,
             },
-            array_layer_count: 1,
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -228,24 +244,27 @@ impl Renderer {
         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             color_attachments: &[
                 wgpu::RenderPassColorAttachmentDescriptor {
-                    attachment: &line_texture.create_default_view(),
+                    attachment: &line_texture.create_view(&wgpu::TextureViewDescriptor::default()),
                     resolve_target: None,
-                    load_op: wgpu::LoadOp::Clear,
-                    store_op: wgpu::StoreOp::Store,
-                    clear_color: wgpu::Color::TRANSPARENT,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: true,
+                    },
                 },
                 wgpu::RenderPassColorAttachmentDescriptor {
-                    attachment: &output_texture.create_default_view(),
+                    attachment: &output_texture
+                        .create_view(&wgpu::TextureViewDescriptor::default()),
                     resolve_target: None,
-                    load_op: wgpu::LoadOp::Clear,
-                    store_op: wgpu::StoreOp::Store,
-                    clear_color: wgpu::Color::BLACK,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: true,
+                    },
                 },
             ],
             depth_stencil_attachment: None,
         });
 
-        queue.submit(&[encoder.finish()]);
+        queue.submit(std::iter::once(encoder.finish()));
 
         Renderer {
             line_ssbo_bind_layout,
@@ -268,6 +287,7 @@ impl Renderer {
     pub fn render(
         &mut self,
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         state: &crate::state::State,
     ) {
@@ -299,10 +319,9 @@ impl Renderer {
                     -1.0 + grid_cell_width * scope.rect.x as f32,
                     1.0 - grid_cell_height * (scope.rect.y as f32 + 0.5 * scope.rect.h as f32),
                     0.0,
-                )) * uv::Mat4::from_nonuniform_scale(uv::Vec4::new(
+                )) * uv::Mat4::from_nonuniform_scale(uv::Vec3::new(
                     1.0 / scope.output().len() as f32 * grid_cell_width * scope.rect.w as f32,
                     grid_cell_height * scope.rect.h as f32,
-                    1.0,
                     1.0,
                 )),
                 thickness: scope.line_width,
@@ -325,18 +344,15 @@ impl Renderer {
             let line_layout = &self.line_ssbo_bind_layout;
             self.line_ssbo.upload(
                 device,
-                encoder,
+                queue,
                 line_data,
-                wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::STORAGE_READ,
+                wgpu::BufferUsage::STORAGE,
                 &|buffer| {
                     device.create_bind_group(&wgpu::BindGroupDescriptor {
                         layout: line_layout,
-                        bindings: &[wgpu::Binding {
+                        entries: &[wgpu::BindGroupEntry {
                             binding: 0,
-                            resource: wgpu::BindingResource::Buffer {
-                                buffer,
-                                range: 0..line_data.len() as u64,
-                            },
+                            resource: wgpu::BindingResource::Buffer(buffer.slice(..)),
                         }],
                         label: Some("scope line ssbo bind group"),
                     })
@@ -347,18 +363,17 @@ impl Renderer {
             let uniform_layout = &self.line_uniform_bind_layout;
             self.line_uniform.upload(
                 device,
-                encoder,
+                queue,
                 uniform_data,
                 wgpu::BufferUsage::UNIFORM,
                 &|buffer| {
                     device.create_bind_group(&wgpu::BindGroupDescriptor {
                         layout: uniform_layout,
-                        bindings: &[wgpu::Binding {
+                        entries: &[wgpu::BindGroupEntry {
                             binding: 0,
-                            resource: wgpu::BindingResource::Buffer {
-                                buffer,
-                                range: 0..std::mem::size_of::<Uniforms>() as u64,
-                            },
+                            resource: wgpu::BindingResource::Buffer(
+                                buffer.slice(0..std::mem::size_of::<Uniforms>() as u64),
+                            ),
                         }],
                         label: Some("scope line uniform bind group"),
                     })
@@ -372,14 +387,17 @@ impl Renderer {
         if let Some(ssbo) = self.line_ssbo.buffer() {
             if let Some(uniforms) = self.line_uniform.buffer() {
                 // render lines
-                let line_view = self.line_texture.create_default_view();
+                let line_view = self
+                    .line_texture
+                    .create_view(&wgpu::TextureViewDescriptor::default());
                 let mut line_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
                         attachment: &line_view,
                         resolve_target: None,
-                        load_op: wgpu::LoadOp::Clear,
-                        store_op: wgpu::StoreOp::Store,
-                        clear_color: wgpu::Color::TRANSPARENT,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                            store: true,
+                        },
                     }],
                     depth_stencil_attachment: None,
                 });
@@ -394,20 +412,33 @@ impl Renderer {
         }
 
         // copy lines to output texture
-        self.line_copy.render(
-            encoder,
-            &self.output_texture.create_default_view(),
-            Some(if self.flick && state.debug.stutter_test {
-                wgpu::Color::BLUE
-            } else {
-                wgpu::Color::BLACK
-            }),
-        );
+        {
+            let output_view = self
+                .output_texture
+                .create_view(&wgpu::TextureViewDescriptor::default());
+            let mut copy_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
+                    attachment: &output_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(if self.flick && state.debug.stutter_test {
+                            wgpu::Color::BLUE
+                        } else {
+                            wgpu::Color::BLACK
+                        }),
+                        store: true,
+                    },
+                }],
+                depth_stencil_attachment: None,
+            });
+            self.line_copy.render(&mut copy_pass);
+        }
 
         self.flick = !self.flick;
     }
 
     pub fn texture_view(&self) -> wgpu::TextureView {
-        self.output_texture.create_default_view()
+        self.output_texture
+            .create_view(&wgpu::TextureViewDescriptor::default())
     }
 }
