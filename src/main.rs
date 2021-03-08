@@ -4,6 +4,7 @@ use anyhow::{anyhow, Context, Result};
 use argh::FromArgs;
 
 mod app;
+mod swapchain;
 
 #[derive(Debug, FromArgs)]
 /// High performance oscilloscope generation for everyone
@@ -16,7 +17,7 @@ pub struct Args {
 fn main() -> Result<()> {
     // Initialize logging
     tracing_subscriber::fmt()
-        .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
+        // .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .try_init()
         .map_err(|e| anyhow!(e))
@@ -27,6 +28,7 @@ fn main() -> Result<()> {
     tracing::trace!("parsed arguments: {:#?}", args);
 
     // Initialize and start program
-    let a = app::App::new(&args)?;
-    a.run();
+    let ev = winit::event_loop::EventLoop::with_user_event();
+    let a = app::App::new(&args, &ev)?;
+    a.run(ev);
 }

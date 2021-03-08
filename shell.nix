@@ -15,9 +15,12 @@
       pkgs.llvmPackages.libclang
       pkgs.gnome3.zenity
       pkgs.openssl
+      pkgs.vulkan-tools
+      pkgs.vulkan-loader
+      pkgs.vulkan-validation-layers
     ];
     LIBCLANG_PATH = pkgs.lib.makeLibraryPath [ pkgs.llvmPackages.libclang ];
     RUST_SRC_PATH = "${pkgs.latest.rustChannels.stable.rust-src}/lib/rustlib/src/rust/src";
-    LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [ pkgs.xorg.libXrandr pkgs.xorg.libXi ];
+    LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [ pkgs.xorg.libXrandr pkgs.xorg.libXi pkgs.vulkan-loader ];
   }
 
