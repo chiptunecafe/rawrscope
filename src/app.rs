@@ -25,6 +25,9 @@ pub struct App {
     imgui: imgui::Context,
     im_plat: imgui_winit_support::WinitPlatform,
     im_renderer: imgui_wgpu::Renderer,
+
+    // UI state
+    ui: crate::ui::Ui,
 }
 
 impl App {
@@ -104,6 +107,8 @@ impl App {
             imgui,
             im_plat,
             im_renderer,
+
+            ui: Default::default(),
         })
     }
 
@@ -189,7 +194,7 @@ impl App {
                             // Build UI
                             let ui = self.imgui.frame();
                             {
-                                ui.show_demo_window(&mut true);
+                                self.ui.build(&ui);
                             }
 
                             // Render UI

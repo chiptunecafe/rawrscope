@@ -5,6 +5,7 @@ use argh::FromArgs;
 
 mod app;
 mod swapchain;
+mod ui;
 
 #[derive(Debug, FromArgs)]
 /// High performance oscilloscope generation for everyone
